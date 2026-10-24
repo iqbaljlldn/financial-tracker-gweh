@@ -1,0 +1,53 @@
+# Development environment configuration
+# Non-secret structural configuration per 06_architecture.md §9 and 21_project_structure.md §7
+# Top-level keys directly mirror the 8-module architecture map.
+
+platform:
+  env: "development"
+  http:
+    port: 8080
+    read_timeout: "15s"
+    write_timeout: "15s"
+  observability:
+    log_level: "debug"
+    enable_tracing: false
+    metrics_port: 9090
+  taskserver:
+    concurrency: 10
+
+identity:
+  token_refresh_window: "5m"
+  session_ttl: "24h"
+
+ingestion:
+  poll_fallback_interval: "15m"
+  batch_size: 50
+  max_retries: 3
+
+understanding:
+  confidence_threshold: 0.85
+  ai_rate_limit_per_second: 5
+  ai_request_timeout: "10s"
+  max_ai_fallbacks_per_hour: 500
+
+financialcore:
+  base_currency: "USD"
+  confidence_gate_threshold: 0.85
+  auto_finalize: true
+
+budget:
+  alert_evaluation_interval: "5m"
+  default_warning_threshold: 0.80
+
+analytics:
+  projection_batch_size: 100
+  projection_lag_alert_threshold: "30s"
+
+engagement:
+  notification_batch_size: 20
+  delivery_timeout: "5s"
+  max_delivery_retries: 5
+
+administration:
+  audit_log_retention_days: 0 # 0 = indefinite retention per 16_security.md §8.3
+  metrics_scrape_interval: "15s"

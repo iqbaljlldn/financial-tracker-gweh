@@ -1,0 +1,77 @@
+# Root sqlc configuration per 21_project_structure.md §3 & §10
+# Configures per-module schema and query path isolation.
+# Cross-schema queries are strictly forbidden per 06_architecture.md §4.
+
+version: "2"
+sql:
+  - engine: "postgresql"
+    schema: "migrations/identity"
+    queries: "../internal/identity/adapter/postgres/queries"
+    gen:
+      go:
+        package: "gen"
+        out: "../internal/identity/adapter/postgres/gen"
+        sql_package: "pgx/v5"
+
+  - engine: "postgresql"
+    schema: "migrations/ingestion"
+    queries: "../internal/ingestion/adapter/postgres/queries"
+    gen:
+      go:
+        package: "gen"
+        out: "../internal/ingestion/adapter/postgres/gen"
+        sql_package: "pgx/v5"
+
+  - engine: "postgresql"
+    schema: "migrations/understanding"
+    queries: "../internal/understanding/adapter/postgres/queries"
+    gen:
+      go:
+        package: "gen"
+        out: "../internal/understanding/adapter/postgres/gen"
+        sql_package: "pgx/v5"
+
+  - engine: "postgresql"
+    schema: "migrations/financialcore"
+    queries: "../internal/financialcore/adapter/postgres/queries"
+    gen:
+      go:
+        package: "gen"
+        out: "../internal/financialcore/adapter/postgres/gen"
+        sql_package: "pgx/v5"
+
+  - engine: "postgresql"
+    schema: "migrations/budget"
+    queries: "../internal/budget/adapter/postgres/queries"
+    gen:
+      go:
+        package: "gen"
+        out: "../internal/budget/adapter/postgres/gen"
+        sql_package: "pgx/v5"
+
+  - engine: "postgresql"
+    schema: "migrations/analytics"
+    queries: "../internal/analytics/adapter/postgres/queries"
+    gen:
+      go:
+        package: "gen"
+        out: "../internal/analytics/adapter/postgres/gen"
+        sql_package: "pgx/v5"
+
+  - engine: "postgresql"
+    schema: "migrations/engagement"
+    queries: "../internal/engagement/adapter/postgres/queries"
+    gen:
+      go:
+        package: "gen"
+        out: "../internal/engagement/adapter/postgres/gen"
+        sql_package: "pgx/v5"
+
+  - engine: "postgresql"
+    schema: "migrations/administration"
+    queries: "../internal/administration/adapter/postgres/queries"
+    gen:
+      go:
+        package: "gen"
+        out: "../internal/administration/adapter/postgres/gen"
+        sql_package: "pgx/v5"

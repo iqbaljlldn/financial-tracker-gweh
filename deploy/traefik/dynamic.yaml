@@ -1,0 +1,34 @@
+# Traefik Dynamic Configuration
+# Configured per 19_deployment.md §4.3 and 16_security.md §5.3
+
+http:
+  routers:
+    api-router:
+      rule: "PathPrefix(`/v1`) || PathPrefix(`/healthz`) || PathPrefix(`/metrics`)"
+      entryPoints:
+        - "web"
+      middlewares:
+        - "rate-limit"
+        - "security-headers"
+      service: "api-service"
+
+  middlewares:
+    rate-limit:
+      rateLimit:
+        average: 100
+        burst: 50
+        period: "1s"
+
+    security-headers:
+      headers:
+        frameDeny: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        customResponseHeaders:
+          X-Robots-Tag: "noindex, nofollow"
+
+  services:
+    api-service:
+      loadBalancer:
+        servers:
+          - url: "http://platform-api:8080"

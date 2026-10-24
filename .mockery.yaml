@@ -1,0 +1,15 @@
+# Mockery v2 configuration per 18_testing_strategy.md §4 and 21_project_structure.md §4.1
+# Scoped strictly to domain/repository.go interfaces.
+# Generated mocks are output to domain/mocks/ and gitignored.
+
+with-expecter: true
+dir: "{{.InterfaceDir}}/mocks"
+outpkg: "mocks"
+mockname: "Mock{{.InterfaceName}}"
+filename: "{{.InterfaceName | snakecase}}_mock.go"
+packages:
+  github.com/iqbaljlldn/financial-tracker-gweh/internal/...:
+    config:
+      recursive: true
+      include:
+        - ".*Repository$"

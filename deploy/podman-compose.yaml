@@ -1,0 +1,90 @@
+# Podman / Docker Compose local development environment
+# Specified per 06_architecture.md §11, 19_deployment.md §4.3, and 21_project_structure.md §3
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: financial-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5433}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-financial_tracker}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-financial_tracker}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: financial-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  traefik:
+    image: traefik:v3.1
+    container_name: financial-traefik
+    restart: unless-stopped
+    command:
+      - "--api.insecure=true"
+      - "--api.dashboard=true"
+      - "--providers.file.directory=/etc/traefik/dynamic"
+      - "--entryPoints.web.address=:80"
+    ports:
+      - "${TRAEFIK_HTTP_PORT:-8082}:80"
+      - "${TRAEFIK_DASHBOARD_PORT:-8083}:8080" # Traefik dashboard
+    volumes:
+      - ./traefik:/etc/traefik/dynamic:ro
+    depends_on:
+      - platform-api
+
+  platform-api:
+    build:
+      context: ..
+      dockerfile: deploy/Containerfile
+    container_name: financial-platform-api
+    restart: unless-stopped
+    command: ["--mode=api"]
+    environment:
+      PLATFORM_MODE: "api"
+      DATABASE_URL: "postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-financial_tracker}?sslmode=disable"
+      REDIS_URL: "redis://redis:6379/0"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  platform-worker:
+    build:
+      context: ..
+      dockerfile: deploy/Containerfile
+    container_name: financial-platform-worker
+    restart: unless-stopped
+    command: ["--mode=worker"]
+    environment:
+      PLATFORM_MODE: "worker"
+      DATABASE_URL: "postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-financial_tracker}?sslmode=disable"
+      REDIS_URL: "redis://redis:6379/0"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
