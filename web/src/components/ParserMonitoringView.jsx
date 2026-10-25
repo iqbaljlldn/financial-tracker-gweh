@@ -8,7 +8,6 @@ import {
   RefreshCw, 
   ShieldAlert, 
   Cpu, 
-  ChevronRight, 
   Eye, 
   Terminal 
 } from 'lucide-react';
@@ -58,42 +57,38 @@ export function ParserMonitoringView() {
     if (rate > 0.05) {
       return (
         <span className="badge badge-danger">
-          <AlertTriangle size={12} className="inline mr-1" />
-          {pct}% (Spike Alert)
+          <AlertTriangle size={12} />
+          <span>{pct}% (Spike Alert)</span>
         </span>
       );
     }
     if (rate > 0.02) {
       return (
         <span className="badge badge-warning">
-          <Activity size={12} className="inline mr-1" />
-          {pct}%
+          <Activity size={12} />
+          <span>{pct}%</span>
         </span>
       );
     }
     return (
       <span className="badge badge-success">
-        <CheckCircle size={12} className="inline mr-1" />
-        {pct}%
+        <CheckCircle size={12} />
+        <span>{pct}%</span>
       </span>
     );
   };
 
   return (
-    <div className="space-y-6">
+    <div className="page-container">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/10">
+      <div className="page-header">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-              <Cpu className="text-emerald-400" size={26} />
-              Parser Monitoring &amp; Engine Telemetry
-            </h1>
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              Ops Internal
-            </span>
+          <div className="page-title">
+            <Cpu color="#34d399" size={26} />
+            <span style={{ color: 'var(--text-primary)' }}>Parser Monitoring &amp; Engine Telemetry</span>
+            <span className="badge badge-success">Ops Internal</span>
           </div>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="page-subtitle">
             Real-time deterministic template performance, sample validation, and rolling failure-rate spike detection (Hotspot H3).
           </p>
         </div>
@@ -101,43 +96,55 @@ export function ParserMonitoringView() {
         <button
           onClick={handleManualRefresh}
           disabled={refreshing}
-          className="btn btn-secondary flex items-center gap-2 self-start sm:self-auto text-sm"
+          className="btn-secondary"
+          style={{ fontSize: '13px', padding: '8px 16px' }}
         >
-          <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
-          {refreshing ? 'Syncing...' : 'Refresh Telemetry'}
+          <RefreshCw size={14} className={refreshing ? 'spin' : ''} />
+          <span>{refreshing ? 'Syncing...' : 'Refresh Telemetry'}</span>
         </button>
       </div>
 
       {error && (
-        <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center gap-3">
+        <div style={{
+          padding: '14px 18px',
+          borderRadius: 'var(--radius-md)',
+          background: 'rgba(244, 63, 94, 0.1)',
+          border: '1px solid rgba(244, 63, 94, 0.25)',
+          color: '#fb7185',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          fontSize: '13px'
+        }}>
           <ShieldAlert size={18} />
           <span>{error}</span>
         </div>
       )}
 
       {/* KPI Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="stat-grid">
         <div className="stat-card">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-semibold uppercase tracking-wider">Active Templates</span>
-            <FileCode size={18} className="text-emerald-400" />
+          <div className="stat-card-header">
+            <span>Active Templates</span>
+            <FileCode size={18} color="#34d399" />
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold text-white">{templates.length}</span>
-            <span className="text-xs text-slate-400">curated senders</span>
+          <div className="stat-card-value">
+            <span className="stat-card-number">{templates.length}</span>
+            <span className="stat-card-meta">curated senders</span>
           </div>
-          <p className="text-xs text-emerald-400/80 mt-2 flex items-center gap-1">
-            <CheckCircle size={12} /> 100% regression validated
-          </p>
+          <div className="stat-card-subtext" style={{ color: '#34d399' }}>
+            <CheckCircle size={13} />
+            <span>100% regression validated</span>
+          </div>
         </div>
 
         <div className="stat-card">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-semibold uppercase tracking-wider">AI Fallback Rate</span>
-            <Cpu size={18} className="text-amber-400" />
+          <div className="stat-card-header">
+            <span>AI Fallback Rate</span>
+            <Cpu size={18} color="#fbbf24" />
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold text-white">
+          <div className="stat-card-value">
+            <span className="stat-card-number">
               {extractions.length > 0
                 ? (
                     (extractions.filter((e) => e.method === 'ai').length / extractions.length) *
@@ -145,34 +152,36 @@ export function ParserMonitoringView() {
                   ).toFixed(1) + '%'
                 : '0.0%'}
             </span>
-            <span className="text-xs text-slate-400">of total volume</span>
+            <span className="stat-card-meta">of total volume</span>
           </div>
-          <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
-            <Clock size={12} /> Probabilistic fallback
-          </p>
+          <div className="stat-card-subtext">
+            <Clock size={13} />
+            <span>Probabilistic fallback</span>
+          </div>
         </div>
 
         <div className="stat-card">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-semibold uppercase tracking-wider">Active Prompt</span>
-            <Terminal size={18} className="text-sky-400" />
+          <div className="stat-card-header">
+            <span>Active Prompt</span>
+            <Terminal size={18} color="#38bdf8" />
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold text-sky-400">v1</span>
-            <span className="text-xs text-slate-400">OpenAI-compat</span>
+          <div className="stat-card-value">
+            <span className="stat-card-number" style={{ color: '#38bdf8' }}>v1</span>
+            <span className="stat-card-meta">OpenAI-compat</span>
           </div>
-          <p className="text-xs text-sky-400/80 mt-2 flex items-center gap-1">
-            <CheckCircle size={12} /> Regression gate passed
-          </p>
+          <div className="stat-card-subtext" style={{ color: '#38bdf8' }}>
+            <CheckCircle size={13} />
+            <span>Regression gate passed</span>
+          </div>
         </div>
 
         <div className="stat-card">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-semibold uppercase tracking-wider">Avg 1h Failure Rate</span>
-            <AlertTriangle size={18} className="text-amber-400" />
+          <div className="stat-card-header">
+            <span>Avg 1h Failure Rate</span>
+            <AlertTriangle size={18} color="#fbbf24" />
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold text-white">
+          <div className="stat-card-value">
+            <span className="stat-card-number">
               {metrics?.rollups?.length
                 ? (
                     (metrics.rollups.reduce((acc, r) => acc + r.rate1h, 0) /
@@ -181,82 +190,94 @@ export function ParserMonitoringView() {
                   ).toFixed(1) + '%'
                 : '0.0%'}
             </span>
-            <span className="text-xs text-slate-400">threshold: 5%</span>
+            <span className="stat-card-meta">threshold: 5%</span>
           </div>
-          <p className="text-xs text-slate-400 mt-2">Trailing 1-hour window</p>
+          <div className="stat-card-subtext">
+            <span>Trailing 1-hour window</span>
+          </div>
         </div>
 
         <div className="stat-card">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-semibold uppercase tracking-wider">H3 Early Warning</span>
-            <ShieldAlert size={18} className="text-purple-400" />
+          <div className="stat-card-header">
+            <span>H3 Early Warning</span>
+            <ShieldAlert size={18} color="#c084fc" />
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold text-emerald-400">
+          <div className="stat-card-value">
+            <span className="stat-card-number" style={{ color: (metrics?.spikeAlerts?.length || 0) > 0 ? '#fb7185' : '#34d399' }}>
               {metrics?.spikeAlerts?.length || 0}
             </span>
-            <span className="text-xs text-slate-400">active alerts</span>
+            <span className="stat-card-meta">active alerts</span>
           </div>
-          <p className="text-xs text-emerald-400/80 mt-2 flex items-center gap-1">
-            <CheckCircle size={12} /> Pipeline within cost target
-          </p>
+          <div className="stat-card-subtext" style={{ color: '#34d399' }}>
+            <CheckCircle size={13} />
+            <span>Pipeline within cost target</span>
+          </div>
         </div>
       </div>
 
       {/* Active Templates Section */}
-      <div className="card space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-white flex items-center gap-2">
-            <FileCode size={18} className="text-emerald-400" />
-            Curated Sender Templates (Active Versions)
-          </h2>
-          <span className="text-xs text-slate-400">
+      <div className="table-card">
+        <div className="table-card-header">
+          <div className="table-card-title">
+            <FileCode size={18} color="#34d399" />
+            <span>Curated Sender Templates (Active Versions)</span>
+          </div>
+          <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
             Exactly-one active version per pattern enforced
           </span>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-300">
-            <thead className="text-xs uppercase bg-white/5 text-slate-400 border-b border-white/10">
+        <div className="table-responsive">
+          <table className="data-table">
+            <thead>
               <tr>
-                <th className="px-4 py-3">Sender Pattern</th>
-                <th className="px-4 py-3">Version</th>
-                <th className="px-4 py-3">Extraction Rules</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">1h Failure Rate</th>
-                <th className="px-4 py-3">24h Failure Rate</th>
+                <th>Sender Pattern</th>
+                <th>Version</th>
+                <th>Extraction Rules</th>
+                <th>Status</th>
+                <th>1h Failure Rate</th>
+                <th>24h Failure Rate</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5">
+            <tbody>
               {templates.map((tmpl) => {
                 const rollup = metrics?.rollups?.find(
                   (r) => r.senderPattern === tmpl.senderPattern
                 );
                 return (
-                  <tr key={tmpl.id} className="hover:bg-white/5 transition-colors">
-                    <td className="px-4 py-3 font-mono font-medium text-white flex items-center gap-2">
-                      <Terminal size={14} className="text-slate-400" />
-                      {tmpl.senderPattern}
+                  <tr key={tmpl.id}>
+                    <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                        <Terminal size={14} color="var(--text-muted)" />
+                        <span>{tmpl.senderPattern}</span>
+                      </div>
                     </td>
-                    <td className="px-4 py-3">
-                      <span className="px-2 py-0.5 rounded text-xs bg-slate-800 text-slate-300 font-mono">
+                    <td>
+                      <span style={{
+                        padding: '2px 8px',
+                        borderRadius: 'var(--radius-sm)',
+                        fontSize: '11px',
+                        background: 'rgba(255, 255, 255, 0.08)',
+                        color: 'var(--text-primary)',
+                        fontFamily: 'var(--font-mono)'
+                      }}>
                         v{tmpl.version}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-xs text-slate-400">
+                    <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                       {Object.keys(tmpl.rules?.fields || {}).length} fields configured
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       {tmpl.active ? (
                         <span className="badge badge-success">Active</span>
                       ) : (
                         <span className="badge badge-neutral">Inactive</span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       {getFailureRateBadge(rollup?.rate1h || 0)}
                     </td>
-                    <td className="px-4 py-3 text-xs text-slate-400">
+                    <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
                       {rollup ? `${(rollup.rate24h * 100).toFixed(1)}%` : '0.0%'}
                     </td>
                   </tr>
@@ -264,7 +285,7 @@ export function ParserMonitoringView() {
               })}
               {templates.length === 0 && (
                 <tr>
-                  <td colSpan="6" className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan="6" style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-muted)' }}>
                     No sender templates registered yet.
                   </td>
                 </tr>
@@ -275,30 +296,30 @@ export function ParserMonitoringView() {
       </div>
 
       {/* Recent Extraction Results Stream */}
-      <div className="card space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-white flex items-center gap-2">
-            <Activity size={18} className="text-sky-400" />
-            Recent Extraction Results Stream
-          </h2>
-          <span className="text-xs text-slate-400">Latest 30 parse attempts</span>
+      <div className="table-card">
+        <div className="table-card-header">
+          <div className="table-card-title">
+            <Activity size={18} color="#38bdf8" />
+            <span>Recent Extraction Results Stream</span>
+          </div>
+          <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Latest 30 parse attempts</span>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-300">
-            <thead className="text-xs uppercase bg-white/5 text-slate-400 border-b border-white/10">
+        <div className="table-responsive">
+          <table className="data-table">
+            <thead>
               <tr>
-                <th className="px-4 py-3">Timestamp</th>
-                <th className="px-4 py-3">Method</th>
-                <th className="px-4 py-3">Template / Prompt</th>
-                <th className="px-4 py-3">Extracted Merchant</th>
-                <th className="px-4 py-3">Category</th>
-                <th className="px-4 py-3">Amount</th>
-                <th className="px-4 py-3">Confidence</th>
-                <th className="px-4 py-3 text-right">Details</th>
+                <th>Timestamp</th>
+                <th>Method</th>
+                <th>Template / Prompt</th>
+                <th>Extracted Merchant</th>
+                <th>Category</th>
+                <th>Amount</th>
+                <th>Confidence</th>
+                <th style={{ textAlign: 'right' }}>Details</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5">
+            <tbody>
               {extractions.map((rec) => {
                 const isFull = rec.confidenceAggregate >= 0.99;
                 const isPartial = rec.confidenceAggregate >= 0.9 && rec.confidenceAggregate < 0.99;
@@ -306,11 +327,11 @@ export function ParserMonitoringView() {
                 const cat = rec.candidate?.typeSpecificPayload?.category;
                 const catSrc = rec.candidate?.typeSpecificPayload?.categorySource;
                 return (
-                  <tr key={rec.id} className="hover:bg-white/5 transition-colors">
-                    <td className="px-4 py-3 text-xs text-slate-400 font-mono">
+                  <tr key={rec.id}>
+                    <td style={{ fontSize: '12px', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
                       {new Date(rec.createdAt).toLocaleTimeString()}
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       <span
                         className={`badge ${
                           rec.method === 'template' ? 'badge-primary' : 'badge-warning'
@@ -319,29 +340,39 @@ export function ParserMonitoringView() {
                         {rec.method}
                       </span>
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-slate-300">
+                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-secondary)' }}>
                       {rec.templateVersion || rec.promptVersion || '-'}
                     </td>
-                    <td className="px-4 py-3 font-medium text-white">
+                    <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
                       {rec.candidate?.merchant?.normalizedName ||
                         rec.candidate?.merchant?.rawName ||
                         '-'}
                     </td>
-                    <td className="px-4 py-3 text-xs">
+                    <td>
                       {cat ? (
-                        <span className="px-2 py-0.5 rounded text-xs bg-slate-800 text-slate-200 border border-white/10" title={`Source: ${catSrc || 'unknown'}`}>
+                        <span
+                          style={{
+                            padding: '2px 8px',
+                            borderRadius: 'var(--radius-sm)',
+                            fontSize: '11px',
+                            background: 'rgba(255, 255, 255, 0.08)',
+                            color: 'var(--text-primary)',
+                            border: '1px solid var(--border-subtle)'
+                          }}
+                          title={`Source: ${catSrc || 'unknown'}`}
+                        >
                           {cat}
                         </span>
                       ) : (
-                        <span className="text-slate-500">-</span>
+                        <span style={{ color: 'var(--text-muted)' }}>-</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 font-mono text-emerald-400 font-semibold">
+                    <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#34d399' }}>
                       {rec.candidate?.amount?.value
                         ? `${rec.candidate.amount.currency} ${rec.candidate.amount.value.toLocaleString()}`
                         : '-'}
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       {rec.method === 'ai' ? (
                         <span
                           className={`badge ${
@@ -358,10 +389,10 @@ export function ParserMonitoringView() {
                         </>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td style={{ textAlign: 'right' }}>
                       <button
                         onClick={() => setSelectedExtraction(rec)}
-                        className="btn-icon text-slate-400 hover:text-white"
+                        className="btn-icon"
                         title="View Candidate Event JSON"
                       >
                         <Eye size={16} />
@@ -372,7 +403,7 @@ export function ParserMonitoringView() {
               })}
               {extractions.length === 0 && (
                 <tr>
-                  <td colSpan="7" className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan="8" style={{ textAlign: 'center', padding: '32px 16px', color: 'var(--text-muted)' }}>
                     No extractions recorded yet. Connect a mailbox to see live stream.
                   </td>
                 </tr>
@@ -384,31 +415,34 @@ export function ParserMonitoringView() {
 
       {/* JSON Candidate Inspection Modal */}
       {selectedExtraction && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-slate-900 border border-white/10 rounded-2xl max-w-2xl w-full p-6 space-y-4 max-h-[85vh] flex flex-col shadow-2xl">
-            <div className="flex items-center justify-between border-b border-white/10 pb-3">
-              <h3 className="font-semibold text-white flex items-center gap-2">
-                <FileCode size={18} className="text-emerald-400" />
-                CandidateFinancialEvent Envelope
-              </h3>
+        <div className="modal-backdrop" onClick={() => setSelectedExtraction(null)}>
+          <div className="modal-container" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '15px', fontWeight: 600 }}>
+                <FileCode size={18} color="#34d399" />
+                <span>CandidateFinancialEvent Envelope</span>
+              </div>
               <button
                 onClick={() => setSelectedExtraction(null)}
-                className="text-slate-400 hover:text-white text-sm"
+                className="btn-icon"
+                style={{ fontSize: '16px', lineHeight: 1 }}
+                title="Close"
               >
-                ✕ Close
+                ✕
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto">
-              <pre className="text-xs font-mono bg-slate-950 p-4 rounded-xl text-emerald-400/90 overflow-x-auto border border-white/5">
+            <div className="modal-body">
+              <pre className="code-viewer">
                 {JSON.stringify(selectedExtraction, null, 2)}
               </pre>
             </div>
 
-            <div className="flex justify-end pt-2 border-t border-white/10">
+            <div className="modal-footer">
               <button
                 onClick={() => setSelectedExtraction(null)}
-                className="btn btn-secondary text-sm"
+                className="btn-secondary"
+                style={{ fontSize: '13px', padding: '8px 16px' }}
               >
                 Dismiss
               </button>
