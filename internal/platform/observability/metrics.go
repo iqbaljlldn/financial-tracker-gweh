@@ -22,6 +22,12 @@ type Metrics struct {
 	PollFallbackLiveness         prometheus.Gauge // Unix timestamp of last poll-fallback heartbeat [GATE]
 	MessagesIngestedTotal        *prometheus.CounterVec
 	SyncLagSeconds               *prometheus.HistogramVec
+
+	// Understanding Module Metrics (§4.2 & 13_email_parser.md §8)
+	UnderstandingTemplateMatchesTotal      *prometheus.CounterVec
+	UnderstandingTemplateFailuresTotal     *prometheus.CounterVec
+	UnderstandingTemplateFailureRate       *prometheus.GaugeVec
+	UnderstandingTemplateExecutionDuration *prometheus.HistogramVec
 }
 
 var defaultMetrics *Metrics
@@ -101,6 +107,39 @@ func InitMetrics() *Metrics {
 			},
 			[]string{"account_id"},
 		),
+
+		UnderstandingTemplateMatchesTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "understanding_template_matches_total",
+				Help: "Total number of successful template parses labeled by sender_pattern and outcome (full/partial).",
+			},
+			[]string{"sender_pattern", "outcome"},
+		),
+
+		UnderstandingTemplateFailuresTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "understanding_template_failures_total",
+				Help: "Total number of failed template parse attempts labeled by sender_pattern and reason.",
+			},
+			[]string{"sender_pattern", "reason"},
+		),
+
+		UnderstandingTemplateFailureRate: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "understanding_template_failure_rate",
+				Help: "Rolling failure rate (0.0 - 1.0) for a template version over a trailing time window (1h/24h).",
+			},
+			[]string{"sender_pattern", "window"},
+		),
+
+		UnderstandingTemplateExecutionDuration: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "understanding_template_execution_seconds",
+				Help:    "Execution duration in seconds for deterministic template parsing.",
+				Buckets: []float64{0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5},
+			},
+			[]string{"sender_pattern"},
+		),
 	}
 
 	reg.MustRegister(
@@ -113,6 +152,10 @@ func InitMetrics() *Metrics {
 		m.PollFallbackLiveness,
 		m.MessagesIngestedTotal,
 		m.SyncLagSeconds,
+		m.UnderstandingTemplateMatchesTotal,
+		m.UnderstandingTemplateFailuresTotal,
+		m.UnderstandingTemplateFailureRate,
+		m.UnderstandingTemplateExecutionDuration,
 	)
 
 	defaultMetrics = m

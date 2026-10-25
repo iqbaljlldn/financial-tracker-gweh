@@ -31,6 +31,13 @@ const (
 	TaskMessageIngested       = "ingestion:message_ingested"
 )
 
+// Task names for Understanding module.
+const (
+	TaskClassifyAndRouteMessage = "understanding:classify_and_route"
+	TaskApplySenderTemplate     = "understanding:apply_template"
+	TaskRollupParserMetrics     = "understanding:rollup_parser_metrics"
+)
+
 // DefaultQueueWeights provides standard priority weighting per 06_architecture.md §6.3.
 var DefaultQueueWeights = map[string]int{
 	QueueIngestionCritical:     6,

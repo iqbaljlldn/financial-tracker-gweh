@@ -15,10 +15,12 @@ import {
   Database,
   ExternalLink,
   RefreshCw,
+  Cpu,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import SettingsDrawer from './SettingsDrawer';
 import GmailAccountsView from './GmailAccountsView';
+import { ParserMonitoringView } from './ParserMonitoringView';
 import { formatMoney } from '../utils/money';
 
 export default function AppShell() {
@@ -270,6 +272,27 @@ export default function AppShell() {
           >
             <Database size={16} /> Audit Trail
           </button>
+
+          <button
+            onClick={() => setActiveTab('parser')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              padding: '10px 14px',
+              borderRadius: 'var(--radius-sm)',
+              border: 'none',
+              background: activeTab === 'parser' ? 'rgba(16, 185, 129, 0.15)' : 'transparent',
+              color: activeTab === 'parser' ? '#34d399' : 'var(--text-secondary)',
+              fontWeight: activeTab === 'parser' ? 600 : 500,
+              fontSize: '14px',
+              cursor: 'pointer',
+              textAlign: 'left',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <Cpu size={16} /> Parser Telemetry
+          </button>
         </nav>
 
         {/* Tab Content Area */}
@@ -437,6 +460,8 @@ export default function AppShell() {
               </div>
             </div>
           )}
+
+          {activeTab === 'parser' && <ParserMonitoringView />}
         </main>
       </div>
 

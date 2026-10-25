@@ -25,6 +25,8 @@ import (
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/platform/observability"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/platform/security"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/platform/taskserver"
+	"github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding"
+	understandingCmd "github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding/application/command"
 )
 
 var (
@@ -222,9 +224,22 @@ func runAPI(ctx context.Context, logger *slog.Logger) {
 	// Mount Prometheus metrics endpoint per 17_observability.md §4
 	server.Router().Handle("/metrics", observability.GetMetrics().Handler())
 
-	// Mount Identity and Ingestion routes
+	understandingMod, err := understanding.NewModule(understanding.Config{
+		DB:             dbPool,
+		AsynqClient:    asynqClient,
+		SessionManager: sessionManager,
+		Logger:         logger,
+	})
+	if err != nil {
+		logger.Error("failed to initialize understanding module", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+	_ = understandingMod.SeedCuratedTemplates(ctx)
+
+	// Mount Identity, Ingestion, and Understanding routes
 	identityMod.RegisterHTTPRoutes(server.Router())
 	ingestionMod.RegisterHTTPRoutes(server.Router())
+	understandingMod.RegisterHTTPRoutes(server.Router())
 
 	serverErr := make(chan error, 1)
 	go func() {
@@ -305,6 +320,18 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 		os.Exit(1)
 	}
 
+	understandingMod, err := understanding.NewModule(understanding.Config{
+		DB:             dbPool,
+		AsynqClient:    asynqClient,
+		SessionManager: sessionManager,
+		Logger:         logger,
+	})
+	if err != nil {
+		logger.Error("failed to initialize understanding module in worker", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+	_ = understandingMod.SeedCuratedTemplates(ctx)
+
 	// Start Ingestion Outbox Relay
 	if err := ingestionMod.StartOutboxRelay(ctx); err != nil {
 		logger.Error("failed to start ingestion outbox relay", slog.String("error", err.Error()))
@@ -327,9 +354,9 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 	}
 
 	mux := asynq.NewServeMux()
-	registerWorkerTaskHandlers(mux, ingestionMod, logger)
+	registerWorkerTaskHandlers(mux, ingestionMod, understandingMod, logger)
 
-	// Periodic watch renewal background loop
+	// Periodic watch renewal and parser metrics background loop
 	go func() {
 		ticker := time.NewTicker(1 * time.Hour)
 		defer ticker.Stop()
@@ -340,6 +367,9 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 			case <-ticker.C:
 				_, _ = ingestionMod.RenewWatchesCmd.Handle(ctx, ingestionCmd.RenewExpiringWatchesCommand{
 					SafetyMargin: 24 * time.Hour,
+				})
+				_, _ = understandingMod.RollupMetricsCmd.Handle(ctx, understandingCmd.RollupParserMetricsCommand{
+					Trigger: "scheduled",
 				})
 			}
 		}
@@ -357,7 +387,12 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 	server.Stop()
 }
 
-func registerWorkerTaskHandlers(mux *asynq.ServeMux, ingestionMod *ingestion.Module, logger *slog.Logger) {
+func registerWorkerTaskHandlers(
+	mux *asynq.ServeMux,
+	ingestionMod *ingestion.Module,
+	understandingMod *understanding.Module,
+	logger *slog.Logger,
+) {
 	mux.HandleFunc(taskserver.TaskStartInitialFullSync, func(ctx context.Context, t *asynq.Task) error {
 		var payload struct {
 			AccountID  string `json:"accountId"`
@@ -416,4 +451,6 @@ func registerWorkerTaskHandlers(mux *asynq.ServeMux, ingestionMod *ingestion.Mod
 		logger.Debug("worker acknowledged message ingested task", "payload_len", len(t.Payload()))
 		return nil
 	})
+
+	understandingMod.RegisterWorkerTasks(mux)
 }

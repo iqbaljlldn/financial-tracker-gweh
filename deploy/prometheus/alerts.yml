@@ -47,3 +47,18 @@ groups:
         annotations:
           summary: "Spike in Gmail historyId expirations triggering bounded fallback"
           description: "Abnormal rate of 404 historyId expirations detected. Verify push webhook health and poll frequency."
+
+  - name: understanding_parser_alerts
+    rules:
+      # [GATE]: Parser failure rate > 5% trailing 1h -> Critical alert
+      # Traces to 13_email_parser.md §8.2 and 17_observability.md §8 (Hotspot H3 early warning)
+      - alert: ParserTemplateFailureRateSpike
+        expr: understanding_template_failure_rate{window="1h"} > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          module: understanding
+        annotations:
+          summary: "Deterministic parser template failure rate exceeded 5% threshold"
+          description: "Template for sender {{ $labels.sender_pattern }} has a failure rate of {{ $value | humanizePercentage }} over trailing 1h. Email format may have changed, triggering costly AI fallback."
+          runbook_url: "docs/13_email_parser.md#82-spike-detection--alerting"

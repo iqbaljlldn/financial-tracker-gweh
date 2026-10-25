@@ -202,6 +202,26 @@ class ApiClient {
       method: 'DELETE',
     });
   }
+
+  // --- Parser Admin Endpoints (Sprint 4) ---
+  async listParserTemplates() {
+    return this.request('/admin/parser/templates', { method: 'GET' });
+  }
+
+  async listParserExtractions(limit = 50) {
+    return this.request(`/admin/parser/extractions?limit=${limit}`, { method: 'GET' });
+  }
+
+  async getParserMetrics() {
+    return this.request('/admin/parser/metrics', { method: 'GET' });
+  }
+
+  async publishParserTemplate(payload) {
+    return this.request('/admin/parser/templates', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
 }
 
 export const apiClient = new ApiClient();

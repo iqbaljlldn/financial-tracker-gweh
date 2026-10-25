@@ -136,9 +136,7 @@ test-ai-eval:
 ## test-template-eval: Run parser sample-set validation suite (18_testing_strategy.md §8.4)
 test-template-eval:
 	@echo "Running deterministic parser template evaluation suite..."
-	@if [ -d "test/fixtures/email-samples" ]; then \
-		echo "Email template sample fixture directory verified. Template evaluation passed (stub)."; \
-	fi
+	go test -v ./internal/understanding/fixtures/...
 
 ## compose-up: Bring up local full-stack container environment (19_deployment.md §4.3)
 compose-up:
