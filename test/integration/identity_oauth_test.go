@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/identity"
@@ -225,13 +226,15 @@ func TestIdentityModule_EndToEndOAuthAndEnvelopeEncryption(t *testing.T) {
 	}
 
 	// --- Step 3: VERIFY TOKENS ARE ENCRYPTED AT REST (DIRECT DB INSPECTION) [GATE] ---
+	targetAccountID := uuid.NewSHA1(uuid.NameSpaceOID, []byte("testuser@gmail.com")).String()
 	var encAccess, encRefresh []byte
 	err = pool.QueryRow(ctx, `
 		SELECT encrypted_access_token, encrypted_refresh_token 
 		FROM identity.oauth_tokens 
-		ORDER BY created_at DESC 
+		WHERE gmail_account_id = $1
+		ORDER BY updated_at DESC 
 		LIMIT 1
-	`).Scan(&encAccess, &encRefresh)
+	`, targetAccountID).Scan(&encAccess, &encRefresh)
 	if err != nil {
 		t.Fatalf("failed to query identity.oauth_tokens directly: %v", err)
 	}

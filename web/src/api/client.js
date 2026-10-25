@@ -178,6 +178,24 @@ class ApiClient {
       body: JSON.stringify(settings),
     });
   }
+
+  // --- Ingestion Endpoints (Sprint 2) ---
+  async listGmailAccounts() {
+    return this.request('/me/gmail-accounts', { method: 'GET' });
+  }
+
+  async linkGmailAccount(emailAddress, syncWindowDays = 90) {
+    return this.request('/me/gmail-accounts', {
+      method: 'POST',
+      body: JSON.stringify({ emailAddress, syncWindowDays }),
+    });
+  }
+
+  async triggerGmailSync(accountId) {
+    return this.request(`/me/gmail-accounts/${accountId}/sync`, {
+      method: 'POST',
+    });
+  }
 }
 
 export const apiClient = new ApiClient();

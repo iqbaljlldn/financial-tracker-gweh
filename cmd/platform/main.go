@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"log/slog"
 	"os"
@@ -13,12 +14,16 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/identity"
+	"github.com/iqbaljlldn/financial-tracker-gweh/internal/ingestion"
+	ingestionCmd "github.com/iqbaljlldn/financial-tracker-gweh/internal/ingestion/application/command"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/platform/config"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/platform/httpserver"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/platform/security"
+	"github.com/iqbaljlldn/financial-tracker-gweh/internal/platform/taskserver"
 )
 
 var (
@@ -75,7 +80,7 @@ func main() {
 	case modeAPI:
 		runAPI(ctx, logger)
 	case modeWorker:
-		runWorkerStub(ctx, logger)
+		runWorker(ctx, logger)
 	}
 
 	logger.Info("financial-event-platform shut down cleanly", slog.String("mode", mode))
@@ -102,6 +107,16 @@ func resolveDatabaseURL(cfg *config.Config) string {
 		return envURL
 	}
 	return "postgres://postgres:postgres@localhost:5433/financial_tracker?sslmode=disable"
+}
+
+func resolveRedisURL(cfg *config.Config) string {
+	if cfg.Platform.RedisURL != "" {
+		return cfg.Platform.RedisURL
+	}
+	if envURL := os.Getenv("REDIS_URL"); envURL != "" {
+		return envURL
+	}
+	return "redis://localhost:6380/0"
 }
 
 func initKMSClient(cfg *config.Config) (security.KMSClient, string, error) {
@@ -164,6 +179,30 @@ func runAPI(ctx context.Context, logger *slog.Logger) {
 		os.Exit(1)
 	}
 
+	sessionManager, err := security.NewSessionTokenManager(jwtSecret)
+	if err != nil {
+		logger.Error("failed to initialize session manager", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
+	redisURL := resolveRedisURL(cfg)
+	asynqClient, err := taskserver.NewClient(redisURL)
+	if err != nil {
+		logger.Warn("could not connect to Redis, background outbox tasks disabled", slog.String("error", err.Error()))
+	}
+
+	ingestionMod, err := ingestion.NewModule(ingestion.Config{
+		DB:             dbPool,
+		TokenProvider:  identityMod.TokenProvider(), // Sanctioned cross-module interface [GATE]
+		AsynqClient:    asynqClient,
+		SessionManager: sessionManager,
+		Logger:         logger,
+	})
+	if err != nil {
+		logger.Error("failed to initialize ingestion module", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
 	port := cfg.Platform.HTTP.Port
 	if port <= 0 {
 		port = 8080
@@ -175,7 +214,9 @@ func runAPI(ctx context.Context, logger *slog.Logger) {
 		WriteTimeout: cfg.Platform.HTTP.WriteTimeout,
 	}, logger)
 
+	// Mount Identity and Ingestion routes
 	identityMod.RegisterHTTPRoutes(server.Router())
+	ingestionMod.RegisterHTTPRoutes(server.Router())
 
 	serverErr := make(chan error, 1)
 	go func() {
@@ -195,8 +236,114 @@ func runAPI(ctx context.Context, logger *slog.Logger) {
 	}
 }
 
-func runWorkerStub(ctx context.Context, logger *slog.Logger) {
-	logger.Info("Worker mode stub initialized (ready for Asynq task server wiring)")
+func runWorker(ctx context.Context, logger *slog.Logger) {
+	cfg := loadAppConfig(logger)
+	dbPool, err := pgxpool.New(ctx, resolveDatabaseURL(cfg))
+	if err != nil {
+		logger.Error("failed to connect to postgres in worker mode", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+	defer dbPool.Close()
+
+	kmsClient, kmsKeyID, err := initKMSClient(cfg)
+	if err != nil {
+		logger.Error("failed to initialize KMS client", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
+	jwtSecret, csrfSecret := initSecrets(cfg)
+
+	identityMod, err := identity.NewModule(identity.Config{
+		DB:                 dbPool,
+		KMSClient:          kmsClient,
+		KMSKeyID:           kmsKeyID,
+		JWTSecret:          jwtSecret,
+		CSRFSecret:         csrfSecret,
+		GoogleClientID:     cfg.Identity.GoogleClientID,
+		GoogleClientSecret: cfg.Identity.GoogleClientSecret,
+		GoogleRedirectURI:  cfg.Identity.GoogleRedirectURL,
+	})
+	if err != nil {
+		logger.Error("failed to initialize identity module", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
+	sessionManager, err := security.NewSessionTokenManager(jwtSecret)
+	if err != nil {
+		logger.Error("failed to initialize session manager", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
+	redisURL := resolveRedisURL(cfg)
+	asynqClient, err := taskserver.NewClient(redisURL)
+	if err != nil {
+		logger.Error("failed to connect to Redis", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
+	ingestionMod, err := ingestion.NewModule(ingestion.Config{
+		DB:             dbPool,
+		TokenProvider:  identityMod.TokenProvider(),
+		AsynqClient:    asynqClient,
+		SessionManager: sessionManager,
+		Logger:         logger,
+	})
+	if err != nil {
+		logger.Error("failed to initialize ingestion module", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
+	// Start Ingestion Outbox Relay
+	if err := ingestionMod.StartOutboxRelay(ctx); err != nil {
+		logger.Error("failed to start ingestion outbox relay", slog.String("error", err.Error()))
+	}
+	defer ingestionMod.StopOutboxRelay()
+
+	// Initialize Asynq task server
+	server, err := taskserver.NewServer(taskserver.ServerConfig{
+		RedisURI:    redisURL,
+		Concurrency: 10,
+		Logger:      logger,
+	})
+	if err != nil {
+		logger.Error("failed to initialize asynq worker server", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
+	mux := asynq.NewServeMux()
+
+	// Handler for TaskStartInitialFullSync
+	mux.HandleFunc(taskserver.TaskStartInitialFullSync, func(ctx context.Context, t *asynq.Task) error {
+		var payload struct {
+			AccountID  string `json:"accountId"`
+			WindowDays int    `json:"windowDays"`
+		}
+		if err := json.Unmarshal(t.Payload(), &payload); err != nil {
+			return err
+		}
+
+		logger.Info("processing TaskStartInitialFullSync", "account_id", payload.AccountID)
+		_, err := ingestionMod.StartInitialFullSyncCmd.Handle(ctx, ingestionCmd.StartInitialFullSyncCommand{
+			AccountID:  payload.AccountID,
+			WindowDays: payload.WindowDays,
+		})
+		return err
+	})
+
+	// Handler for TaskMessageIngested (Sprint 2 logging/acknowledgement)
+	mux.HandleFunc(taskserver.TaskMessageIngested, func(ctx context.Context, t *asynq.Task) error {
+		logger.Debug("worker acknowledged message ingested task", "payload_len", len(t.Payload()))
+		return nil
+	})
+
+	logger.Info("Asynq worker server started listening to queues")
+	go func() {
+		if err := server.Run(mux); err != nil {
+			logger.Error("asynq worker server stopped with error", slog.String("error", err.Error()))
+		}
+	}()
+
 	<-ctx.Done()
-	logger.Info("received termination signal in Worker mode")
+	logger.Info("stopping Asynq worker server...")
+	server.Stop()
 }

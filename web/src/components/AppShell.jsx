@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import SettingsDrawer from './SettingsDrawer';
+import GmailAccountsView from './GmailAccountsView';
 import { formatMoney } from '../utils/money';
 
 export default function AppShell() {
@@ -364,53 +365,7 @@ export default function AppShell() {
             </div>
           )}
 
-          {activeTab === 'mailboxes' && (
-            <div>
-              <div style={{ marginBottom: '24px' }}>
-                <h1 style={{ fontSize: '24px', marginBottom: '6px' }}>Connected Gmail Mailboxes</h1>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-                  Configured under <code>ingestion.gmail_accounts</code> table with least-privilege <code>gmail.readonly</code> scopes.
-                </p>
-              </div>
-
-              <div className="glass-card" style={{ padding: '24px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <div
-                      style={{
-                        width: '48px',
-                        height: '48px',
-                        borderRadius: '12px',
-                        background: 'rgba(66, 133, 244, 0.15)',
-                        color: '#4285F4',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      <Mail size={24} />
-                    </div>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontSize: '16px', fontWeight: 600 }}>{user?.email}</span>
-                        <span className="badge badge-emerald">Active</span>
-                      </div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
-                        Scope: <code>gmail.readonly</code> • Mode: <code>offline / consent</code>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-                      Tokens Encrypted (AES-256-GCM)
-                    </span>
-                    <Lock size={16} color="#10b981" />
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          {activeTab === 'mailboxes' && <GmailAccountsView />}
 
           {activeTab === 'ledger' && (
             <div>

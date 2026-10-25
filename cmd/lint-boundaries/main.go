@@ -158,8 +158,23 @@ func inspectImport(filePath string, line int, rawImport, callerModule, callerLay
 	return checkIntraModule(filePath, line, importPath, callerModule, targetModule, callerLayer, targetLayer)
 }
 
+// Sanctioned cross-module interface imports per 10_backend_blueprint.md §6:
+// Only domain interfaces may be imported by a consuming module's application or adapter layer.
+var sanctionedCrossModuleImports = map[string]map[string]bool{
+	"ingestion": {
+		"identity": true, // TokenProvider (10_backend_blueprint.md §6)
+	},
+}
+
 func checkCrossModule(filePath string, line int, importPath, callerModule, targetModule, targetLayer string) *Violation {
 	if domainModules[callerModule] && domainModules[targetModule] && callerModule != targetModule {
+		// Check if this is a sanctioned cross-module domain interface import per 10_backend_blueprint.md §6
+		if sanctionedCrossModuleImports[callerModule] != nil && sanctionedCrossModuleImports[callerModule][targetModule] {
+			if targetLayer == "domain" {
+				return nil // Sanctioned interface import allowed
+			}
+		}
+
 		return &Violation{
 			File:     filePath,
 			Line:     line,

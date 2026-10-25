@@ -1,7 +1,9 @@
 package identity
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -146,4 +148,42 @@ func NewModule(cfg Config) (*Module, error) {
 // RegisterHTTPRoutes mounts all Identity endpoints onto the provided Chi router.
 func (m *Module) RegisterHTTPRoutes(r chi.Router) {
 	m.HTTPHandler.RegisterRoutes(r)
+}
+
+// TokenProvider returns the sanctioned cross-module TokenProvider interface per 10_backend_blueprint.md §6.
+func (m *Module) TokenProvider() domain.TokenProvider {
+	return &tokenProviderAdapter{
+		tokenRepo:  m.TokenRepo,
+		refreshCmd: m.RefreshOAuthCmd,
+		encryptor:  m.EnvelopeEncryptor,
+	}
+}
+
+type tokenProviderAdapter struct {
+	tokenRepo  domain.OAuthTokenRepository
+	refreshCmd *command.RefreshOAuthTokenHandler
+	encryptor  *security.EnvelopeEncryptor
+}
+
+func (p *tokenProviderAdapter) GetValidAccessToken(ctx context.Context, gmailAccountID string) (string, error) {
+	token, err := p.tokenRepo.FindByGmailAccountID(ctx, gmailAccountID)
+	if err != nil {
+		return "", fmt.Errorf("token provider: token not found for account %s: %w", gmailAccountID, err)
+	}
+
+	// Proactively refresh if expired or expiring within 5 minutes
+	if time.Now().UTC().Add(5 * time.Minute).After(token.AccessTokenExpiresAt()) {
+		res, err := p.refreshCmd.Handle(ctx, command.RefreshOAuthTokenCommand{GmailAccountID: gmailAccountID})
+		if err != nil {
+			return "", fmt.Errorf("token provider: refresh failed: %w", err)
+		}
+		return res.AccessToken, nil
+	}
+
+	// Decrypt active access token
+	decrypted, err := p.encryptor.Decrypt(ctx, token.EncryptedAccessToken())
+	if err != nil {
+		return "", fmt.Errorf("token provider: decrypt access token failed: %w", err)
+	}
+	return string(decrypted), nil
 }
