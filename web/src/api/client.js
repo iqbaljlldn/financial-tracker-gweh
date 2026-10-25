@@ -196,6 +196,12 @@ class ApiClient {
       method: 'POST',
     });
   }
+
+  async disconnectGmailAccount(accountId, purge = false) {
+    return this.request(`/me/gmail-accounts/${accountId}?purge=${purge}`, {
+      method: 'DELETE',
+    });
+  }
 }
 
 export const apiClient = new ApiClient();

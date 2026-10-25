@@ -4,12 +4,14 @@ import (
 	"time"
 )
 
-// Event names
+// Event names per 04_domain_model.md §6.4 & 07_sequence_diagrams.md
 const (
-	EventGmailAccountLinked  = "GmailAccountLinked"
-	EventMessageIngested     = "MessageIngested"
-	EventSyncCompleted       = "SyncCompleted"
-	EventAccountDisconnected = "AccountDisconnected"
+	EventGmailAccountLinked           = "GmailAccountLinked"
+	EventMessageIngested              = "MessageIngested"
+	EventSyncCompleted                = "SyncCompleted"
+	EventAccountDisconnected          = "AccountDisconnected"
+	EventHistorySyncFallbackTriggered = "HistorySyncFallbackTriggered"
+	EventUserDataPurgeRequested       = "UserDataPurgeRequested"
 )
 
 // GmailAccountLinkedPayload models EventGmailAccountLinked payload for outbox events.
@@ -45,5 +47,22 @@ type AccountDisconnectedPayload struct {
 	GmailAccountID string    `json:"gmailAccountId"`
 	UserID         string    `json:"userId"`
 	Reason         string    `json:"reason"`
+	PurgeRequested bool      `json:"purgeRequested"`
+	OccurredAt     time.Time `json:"occurredAt"`
+}
+
+// HistorySyncFallbackTriggeredPayload models EventHistorySyncFallbackTriggered payload per 12_gmail_connector.md §6.2.
+type HistorySyncFallbackTriggeredPayload struct {
+	GmailAccountID string    `json:"gmailAccountId"`
+	UserID         string    `json:"userId"`
+	Reason         string    `json:"reason"`
+	LookbackDays   int       `json:"lookbackDays"`
+	OccurredAt     time.Time `json:"occurredAt"`
+}
+
+// UserDataPurgeRequestedPayload models EventUserDataPurgeRequested payload per 07_sequence_diagrams.md Diagram 8.
+type UserDataPurgeRequestedPayload struct {
+	GmailAccountID string    `json:"gmailAccountId"`
+	UserID         string    `json:"userId"`
 	OccurredAt     time.Time `json:"occurredAt"`
 }

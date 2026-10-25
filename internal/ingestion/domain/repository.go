@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 	"errors"
+	"time"
 )
 
 var (
@@ -20,6 +21,9 @@ type GmailAccountRepository interface {
 	FindByID(ctx context.Context, id string) (*GmailAccount, error)
 	FindByEmail(ctx context.Context, email string) (*GmailAccount, error)
 	ListByUserID(ctx context.Context, userID string) ([]*GmailAccount, error)
+	ListActiveForWatchRenewal(ctx context.Context, before time.Time, limit int32) ([]*GmailAccount, error)
+	ListActive(ctx context.Context) ([]*GmailAccount, error)
+	RecordWatchLog(ctx context.Context, accountID string, event string) error
 }
 
 // IngestedMessageRepository defines persistence operations for IngestedMessage entities.

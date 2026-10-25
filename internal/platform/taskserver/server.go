@@ -23,10 +23,12 @@ const (
 
 // Task names for Ingestion module.
 const (
-	TaskStartInitialFullSync = "ingestion:start_initial_full_sync"
-	TaskRegisterGmailWatch   = "ingestion:register_gmail_watch"
-	TaskRunIncrementalSync   = "ingestion:run_incremental_sync"
-	TaskMessageIngested      = "ingestion:message_ingested"
+	TaskStartInitialFullSync  = "ingestion:start_initial_full_sync"
+	TaskRegisterGmailWatch    = "ingestion:register_gmail_watch"
+	TaskRenewExpiringWatches  = "ingestion:renew_expiring_watches"
+	TaskRunIncrementalSync    = "ingestion:run_incremental_sync"
+	TaskScheduledPollFallback = "ingestion:scheduled_poll_fallback"
+	TaskMessageIngested       = "ingestion:message_ingested"
 )
 
 // DefaultQueueWeights provides standard priority weighting per 06_architecture.md §6.3.

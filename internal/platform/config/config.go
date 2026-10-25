@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -73,9 +74,12 @@ type IdentityConfig struct {
 }
 
 type IngestionConfig struct {
-	PollFallbackInterval time.Duration `yaml:"poll_fallback_interval"`
-	BatchSize            int           `yaml:"batch_size"`
-	MaxRetries           int           `yaml:"max_retries"`
+	PollFallbackInterval        time.Duration `yaml:"poll_fallback_interval"`
+	BatchSize                   int           `yaml:"batch_size"`
+	MaxRetries                  int           `yaml:"max_retries"`
+	HistoryFallbackLookbackDays int           `yaml:"history_fallback_lookback_days"`
+	PubSubTopic                 string        `yaml:"pubsub_topic"`
+	PubSubVerificationSecret    string        `yaml:"pubsub_verification_secret"`
 }
 
 // UnderstandingConfig holds AI inference and deterministic parsing configuration.
@@ -154,6 +158,13 @@ func Load(configPath string, envPaths ...string) (*Config, error) {
 
 // applyEnvironmentOverrides injects secrets and runtime environment overrides into the typed config.
 func applyEnvironmentOverrides(cfg *Config) {
+	applyPlatformOverrides(cfg)
+	applyIdentityOverrides(cfg)
+	applyEngagementOverrides(cfg)
+	applyIngestionOverrides(cfg)
+}
+
+func applyPlatformOverrides(cfg *Config) {
 	if val := os.Getenv("DATABASE_URL"); val != "" {
 		cfg.Platform.DatabaseURL = val
 	}
@@ -166,7 +177,9 @@ func applyEnvironmentOverrides(cfg *Config) {
 	if val := os.Getenv("KMS_KEY_ID"); val != "" {
 		cfg.Platform.KMSKeyID = val
 	}
+}
 
+func applyIdentityOverrides(cfg *Config) {
 	if val := os.Getenv("GOOGLE_OAUTH_CLIENT_ID"); val != "" {
 		cfg.Identity.GoogleClientID = val
 	}
@@ -176,12 +189,41 @@ func applyEnvironmentOverrides(cfg *Config) {
 	if val := os.Getenv("GOOGLE_OAUTH_REDIRECT_URL"); val != "" {
 		cfg.Identity.GoogleRedirectURL = val
 	}
+}
 
+func applyEngagementOverrides(cfg *Config) {
 	if val := os.Getenv("WHATSAPP_API_TOKEN"); val != "" {
 		cfg.Engagement.WhatsAppToken = val
 	}
 	if val := os.Getenv("WHATSAPP_PHONE_NUMBER_ID"); val != "" {
 		cfg.Engagement.WhatsAppPhoneNumberID = val
+	}
+}
+
+func applyIngestionOverrides(cfg *Config) {
+	if val := os.Getenv("INGESTION_POLL_FALLBACK_INTERVAL"); val != "" {
+		if d, err := time.ParseDuration(val); err == nil && d > 0 {
+			cfg.Ingestion.PollFallbackInterval = d
+		}
+	}
+	if cfg.Ingestion.PollFallbackInterval <= 0 {
+		cfg.Ingestion.PollFallbackInterval = 15 * time.Minute
+	}
+
+	if val := os.Getenv("GMAIL_PUBSUB_TOPIC"); val != "" {
+		cfg.Ingestion.PubSubTopic = val
+	}
+	if val := os.Getenv("GMAIL_PUBSUB_VERIFICATION_SECRET"); val != "" {
+		cfg.Ingestion.PubSubVerificationSecret = val
+	}
+
+	if val := os.Getenv("INGESTION_HISTORY_FALLBACK_DAYS"); val != "" {
+		if days, err := strconv.Atoi(val); err == nil && days > 0 {
+			cfg.Ingestion.HistoryFallbackLookbackDays = days
+		}
+	}
+	if cfg.Ingestion.HistoryFallbackLookbackDays <= 0 {
+		cfg.Ingestion.HistoryFallbackLookbackDays = 3 // Default 3 days per 12_gmail_connector.md §6.2
 	}
 }
 

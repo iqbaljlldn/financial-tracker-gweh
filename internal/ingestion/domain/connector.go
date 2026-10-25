@@ -32,6 +32,7 @@ type RawMessage struct {
 	BodyText     string
 	BodyHTML     string
 	HistoryID    string
+	ParseFailed  bool // Marked true if MIME extraction encountered malformed structure per 12_gmail_connector.md §9
 }
 
 // SyncBatch represents a single paginated batch of messages retrieved during initial full sync.

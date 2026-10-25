@@ -1,12 +1,14 @@
 package external
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/identity/domain"
 	ingestionDomain "github.com/iqbaljlldn/financial-tracker-gweh/internal/ingestion/domain"
+	"github.com/iqbaljlldn/financial-tracker-gweh/internal/platform/observability"
 )
 
 const (
@@ -27,6 +30,7 @@ type GmailClientConfig struct {
 	HTTPClient    *http.Client
 	TokenProvider domain.TokenProvider // Sanctioned cross-module interface per 10_backend_blueprint.md §6
 	PubSubTopic   string               // projects/{project}/topics/{topic} for users.watch
+	BaseBackoff   time.Duration        // Base backoff duration (default 500ms)
 }
 
 // GmailClient coordinates direct interactions with the Google Gmail REST API.
@@ -36,6 +40,7 @@ type GmailClient struct {
 	httpClient    *http.Client
 	tokenProvider domain.TokenProvider
 	pubSubTopic   string
+	baseBackoff   time.Duration
 }
 
 // NewGmailClient constructs a new GmailClient.
@@ -54,11 +59,17 @@ func NewGmailClient(cfg GmailClientConfig) (*GmailClient, error) {
 		httpClient = &http.Client{Timeout: 30 * time.Second}
 	}
 
+	baseBackoff := cfg.BaseBackoff
+	if baseBackoff <= 0 {
+		baseBackoff = 500 * time.Millisecond
+	}
+
 	return &GmailClient{
 		baseURL:       strings.TrimSuffix(baseURL, "/"),
 		httpClient:    httpClient,
 		tokenProvider: cfg.TokenProvider,
 		pubSubTopic:   cfg.PubSubTopic,
+		baseBackoff:   baseBackoff,
 	}, nil
 }
 
@@ -66,16 +77,10 @@ func NewGmailClient(cfg GmailClientConfig) (*GmailClient, error) {
 func (c *GmailClient) Authenticate(ctx context.Context, creds ingestionDomain.ConnectorCredentials) (*ingestionDomain.ConnectorAccount, error) {
 	token, err := c.tokenProvider.GetValidAccessToken(ctx, creds.AccountID)
 	if err != nil {
-		return nil, fmt.Errorf("gmail authenticate: token retrieval failed: %w", err)
+		return nil, c.mapTokenError(err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/me/profile", nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest(ctx, "profile", http.MethodGet, c.baseURL+"/me/profile", token, nil, creds.AccountID, 1)
 	if err != nil {
 		return nil, fmt.Errorf("gmail authenticate: request failed: %w", err)
 	}
@@ -112,7 +117,7 @@ func (c *GmailClient) InitialSync(
 ) (*ingestionDomain.SyncBatch, error) {
 	token, err := c.tokenProvider.GetValidAccessToken(ctx, account.ID)
 	if err != nil {
-		return nil, fmt.Errorf("gmail initial sync: token error: %w", err)
+		return nil, c.mapTokenError(err)
 	}
 
 	if windowDays <= 0 {
@@ -128,13 +133,7 @@ func (c *GmailClient) InitialSync(
 		endpoint += "&pageToken=" + url.QueryEscape(pageToken)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest(ctx, "messages.list", http.MethodGet, endpoint, token, nil, account.ID, 5)
 	if err != nil {
 		return nil, fmt.Errorf("gmail messages.list failed: %w", err)
 	}
@@ -161,7 +160,7 @@ func (c *GmailClient) InitialSync(
 	latestHistoryID := ""
 
 	for _, item := range listResp.Messages {
-		rawMsg, err := c.fetchMessageDetail(ctx, token, item.ID)
+		rawMsg, err := c.fetchMessageDetail(ctx, token, item.ID, account.ID)
 		if err != nil {
 			// Per 12_gmail_connector.md §9: single message fetch error should not fail the whole batch
 			continue
@@ -184,7 +183,7 @@ func (c *GmailClient) InitialSync(
 func (c *GmailClient) RegisterRealtimeWatch(ctx context.Context, account *ingestionDomain.ConnectorAccount) (*ingestionDomain.WatchHandle, error) {
 	token, err := c.tokenProvider.GetValidAccessToken(ctx, account.ID)
 	if err != nil {
-		return nil, fmt.Errorf("gmail watch: token error: %w", err)
+		return nil, c.mapTokenError(err)
 	}
 
 	bodyData, _ := json.Marshal(map[string]any{
@@ -192,14 +191,7 @@ func (c *GmailClient) RegisterRealtimeWatch(ctx context.Context, account *ingest
 		"labelIds":  []string{"INBOX"},
 	})
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/me/watch", strings.NewReader(string(bodyData)))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest(ctx, "users.watch", http.MethodPost, c.baseURL+"/me/watch", token, bodyData, account.ID, 50)
 	if err != nil {
 		return nil, fmt.Errorf("gmail watch request failed: %w", err)
 	}
@@ -238,17 +230,11 @@ func (c *GmailClient) FetchIncremental(
 ) (*ingestionDomain.IncrementalBatch, error) {
 	token, err := c.tokenProvider.GetValidAccessToken(ctx, account.ID)
 	if err != nil {
-		return nil, fmt.Errorf("gmail incremental sync: token error: %w", err)
+		return nil, c.mapTokenError(err)
 	}
 
 	endpoint := fmt.Sprintf("%s/me/history?startHistoryId=%s&historyTypes=messageAdded", c.baseURL, url.QueryEscape(cursor))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest(ctx, "history.list", http.MethodGet, endpoint, token, nil, account.ID, 2)
 	if err != nil {
 		return nil, fmt.Errorf("gmail history.list failed: %w", err)
 	}
@@ -287,7 +273,7 @@ func (c *GmailClient) FetchIncremental(
 	var messages []*ingestionDomain.RawMessage
 	for _, h := range histResp.History {
 		for _, added := range h.MessagesAdded {
-			msg, err := c.fetchMessageDetail(ctx, token, added.Message.ID)
+			msg, err := c.fetchMessageDetail(ctx, token, added.Message.ID, account.ID)
 			if err != nil {
 				continue
 			}
@@ -314,13 +300,7 @@ func (c *GmailClient) Disconnect(ctx context.Context, account *ingestionDomain.C
 		return nil // Account already disconnected/revoked
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/me/stop", nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest(ctx, "users.stop", http.MethodPost, c.baseURL+"/me/stop", token, nil, account.ID, 50)
 	if err != nil {
 		return err
 	}
@@ -328,14 +308,90 @@ func (c *GmailClient) Disconnect(ctx context.Context, account *ingestionDomain.C
 	return nil
 }
 
-func (c *GmailClient) fetchMessageDetail(ctx context.Context, token, messageID string) (*ingestionDomain.RawMessage, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/me/messages/%s?format=full", c.baseURL, messageID), nil)
+// doRequest executes an outbound HTTP request against Gmail API with truncated exponential backoff
+// on 429 / 5xx responses and metrics instrumentation per 12_gmail_connector.md §8 and 17_observability.md §4.1.
+func (c *GmailClient) doRequest(
+	ctx context.Context,
+	apiMethod, httpMethod, targetURL, token string,
+	body []byte,
+	accountID string,
+	quotaUnits float64,
+) (*http.Response, error) {
+	const maxRetries = 4
+	maxBackoff := 32 * time.Second
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		resp, err := c.executeSingleRequest(ctx, httpMethod, targetURL, token, body)
+		if err != nil {
+			if attempt == maxRetries {
+				observability.GetMetrics().GmailAPICallsTotal.WithLabelValues(apiMethod, "network_error").Inc()
+				return nil, err
+			}
+			if err := c.sleepBackoff(ctx, c.baseBackoff*(1<<attempt), maxBackoff); err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		statusCode := resp.StatusCode
+		observability.GetMetrics().GmailAPICallsTotal.WithLabelValues(apiMethod, strconv.Itoa(statusCode)).Inc()
+		if accountID != "" && quotaUnits > 0 {
+			observability.GetMetrics().GmailQuotaUnitsConsumedTotal.WithLabelValues(accountID).Add(quotaUnits)
+		}
+
+		if isRetryableStatus(statusCode) {
+			_ = resp.Body.Close()
+			if attempt == maxRetries {
+				return resp, fmt.Errorf("gmail %s: rate limited or server error (%d) after %d retries", apiMethod, statusCode, attempt)
+			}
+			if err := c.sleepBackoff(ctx, c.baseBackoff*(1<<attempt), maxBackoff); err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		return resp, nil
+	}
+
+	return nil, errors.New("request exceeded retries")
+}
+
+func (c *GmailClient) executeSingleRequest(ctx context.Context, method, targetURL, token string, body []byte) (*http.Response, error) {
+	var bodyReader io.Reader
+	if len(body) > 0 {
+		bodyReader = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, targetURL, bodyReader)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+	if len(body) > 0 {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	return c.httpClient.Do(req)
+}
 
-	resp, err := c.httpClient.Do(req)
+func (c *GmailClient) sleepBackoff(ctx context.Context, backoff, maxBackoff time.Duration) error {
+	if backoff > maxBackoff {
+		backoff = maxBackoff
+	}
+	jitter := time.Duration(rand.Intn(100)) * time.Millisecond
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(backoff + jitter):
+		return nil
+	}
+}
+
+func isRetryableStatus(status int) bool {
+	return status == http.StatusTooManyRequests || (status >= 500 && status <= 504)
+}
+
+func (c *GmailClient) fetchMessageDetail(ctx context.Context, token, messageID, accountID string) (*ingestionDomain.RawMessage, error) {
+	url := fmt.Sprintf("%s/me/messages/%s?format=full", c.baseURL, messageID)
+	resp, err := c.doRequest(ctx, "messages.get", http.MethodGet, url, token, nil, accountID, 5)
 	if err != nil {
 		return nil, err
 	}
@@ -346,30 +402,9 @@ func (c *GmailClient) fetchMessageDetail(ctx context.Context, token, messageID s
 		return nil, fmt.Errorf("get message %s status %d: %s", messageID, resp.StatusCode, string(body))
 	}
 
-	var msgData struct {
-		ID           string `json:"id"`
-		HistoryID    string `json:"historyId"`
-		InternalDate string `json:"internalDate"`
-		Snippet      string `json:"snippet"`
-		Payload      struct {
-			Headers []struct {
-				Name  string `json:"name"`
-				Value string `json:"value"`
-			} `json:"headers"`
-			Body struct {
-				Data string `json:"data"`
-			} `json:"body"`
-			Parts []struct {
-				MimeType string `json:"mimeType"`
-				Body     struct {
-					Data string `json:"data"`
-				} `json:"body"`
-			} `json:"parts"`
-		} `json:"payload"`
-	}
-
+	var msgData messageDetailResponse
 	if err := json.NewDecoder(resp.Body).Decode(&msgData); err != nil {
-		return nil, err
+		return &ingestionDomain.RawMessage{ExternalID: messageID, ParseFailed: true}, nil
 	}
 
 	headers := make(map[string]string)
@@ -383,15 +418,7 @@ func (c *GmailClient) fetchMessageDetail(ctx context.Context, token, messageID s
 		receivedAt = time.Now().UTC()
 	}
 
-	bodyText := decodeBase64URL(msgData.Payload.Body.Data)
-	bodyHTML := ""
-	for _, part := range msgData.Payload.Parts {
-		if strings.HasPrefix(part.MimeType, "text/plain") && bodyText == "" {
-			bodyText = decodeBase64URL(part.Body.Data)
-		} else if strings.HasPrefix(part.MimeType, "text/html") {
-			bodyHTML = decodeBase64URL(part.Body.Data)
-		}
-	}
+	bodyText, bodyHTML, parseFailed := extractBodies(msgData.Payload.Body.Data, msgData.Payload.Parts)
 
 	return &ingestionDomain.RawMessage{
 		ExternalID:   msgData.ID,
@@ -404,12 +431,74 @@ func (c *GmailClient) fetchMessageDetail(ctx context.Context, token, messageID s
 		BodyText:     bodyText,
 		BodyHTML:     bodyHTML,
 		HistoryID:    msgData.HistoryID,
+		ParseFailed:  parseFailed,
 	}, nil
 }
 
-func decodeBase64URL(s string) string {
+type messageDetailResponse struct {
+	ID           string `json:"id"`
+	HistoryID    string `json:"historyId"`
+	InternalDate string `json:"internalDate"`
+	Snippet      string `json:"snippet"`
+	Payload      struct {
+		Headers []struct {
+			Name  string `json:"name"`
+			Value string `json:"value"`
+		} `json:"headers"`
+		Body struct {
+			Data string `json:"data"`
+		} `json:"body"`
+		Parts []struct {
+			MimeType string `json:"mimeType"`
+			Body     struct {
+				Data string `json:"data"`
+			} `json:"body"`
+		} `json:"parts"`
+	} `json:"payload"`
+}
+
+func extractBodies(mainBodyData string, parts []struct {
+	MimeType string `json:"mimeType"`
+	Body     struct {
+		Data string `json:"data"`
+	} `json:"body"`
+}) (string, string, bool) {
+	var parseFailed bool
+	bodyText, err := decodeBase64URL(mainBodyData)
+	if err != nil && mainBodyData != "" {
+		parseFailed = true
+	}
+	var bodyHTML string
+	for _, part := range parts {
+		if strings.HasPrefix(part.MimeType, "text/plain") && bodyText == "" {
+			txt, err := decodeBase64URL(part.Body.Data)
+			if err != nil && part.Body.Data != "" {
+				parseFailed = true
+			} else {
+				bodyText = txt
+			}
+		} else if strings.HasPrefix(part.MimeType, "text/html") {
+			html, err := decodeBase64URL(part.Body.Data)
+			if err != nil && part.Body.Data != "" {
+				parseFailed = true
+			} else {
+				bodyHTML = html
+			}
+		}
+	}
+	return bodyText, bodyHTML, parseFailed
+}
+
+func (c *GmailClient) mapTokenError(err error) error {
+	if errors.Is(err, domain.ErrRevocationDetected) || strings.Contains(strings.ToLower(err.Error()), "invalid_grant") {
+		return domain.ErrRevocationDetected
+	}
+	return err
+}
+
+func decodeBase64URL(s string) (string, error) {
 	if s == "" {
-		return ""
+		return "", nil
 	}
 	s = strings.ReplaceAll(s, "-", "+")
 	s = strings.ReplaceAll(s, "_", "/")
@@ -421,7 +510,7 @@ func decodeBase64URL(s string) string {
 	}
 	b, err := base64.StdEncoding.DecodeString(s)
 	if err != nil {
-		return ""
+		return "", err
 	}
-	return string(b)
+	return string(b), nil
 }

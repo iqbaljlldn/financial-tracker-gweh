@@ -1,0 +1,49 @@
+# Prometheus Alert Rules per 17_observability.md §8
+groups:
+  - name: ingestion_connector_alerts
+    rules:
+      # [GATE]: Poll-fallback liveness heartbeat stale -> Critical
+      # Traces to 12_gmail_connector.md §17 and 17_observability.md §8 (H2 safety-net failure)
+      - alert: PollFallbackLivenessStale
+        expr: (time() - ingestion_poll_fallback_liveness) > 1800
+        for: 5m
+        labels:
+          severity: critical
+          module: ingestion
+        annotations:
+          summary: "Gmail poll-fallback safety net has stopped reporting liveness heartbeats"
+          description: "The scheduled poll-fallback task has not reported a heartbeat for over 30 minutes (2x the 15-minute expected cycle). Dual-trigger H2 protection is degraded."
+          runbook_url: "docs/12_gmail_connector.md#17-production-considerations"
+
+      # Watch renewal failure -> Medium severity
+      - alert: GmailWatchRenewalFailing
+        expr: rate(ingestion_watch_renewal_failure_total[1h]) > 0 and rate(ingestion_watch_renewal_success_total[1h]) == 0
+        for: 15m
+        labels:
+          severity: medium
+          module: ingestion
+        annotations:
+          summary: "Gmail watch renewals are failing continuously"
+          description: "Watch renewals are failing without any successful renewals in the last hour. Affected mailboxes may fall back to poll-only mode."
+
+      # Watch expiring soon -> Medium severity warning if accounts within 24h of expiry
+      - alert: GmailWatchesExpiringSoon
+        expr: ingestion_watch_expiring_soon > 0
+        for: 2h
+        labels:
+          severity: medium
+          module: ingestion
+        annotations:
+          summary: "One or more Gmail accounts are within 24 hours of watch expiration"
+          description: "Active Gmail accounts have watch leases expiring within 24 hours and have not yet been renewed."
+
+      # History sync fallback spike -> High severity
+      - alert: HistorySyncFallbackSpike
+        expr: rate(ingestion_history_sync_fallback_total[1h]) > 0.05
+        for: 10m
+        labels:
+          severity: high
+          module: ingestion
+        annotations:
+          summary: "Spike in Gmail historyId expirations triggering bounded fallback"
+          description: "Abnormal rate of 404 historyId expirations detected. Verify push webhook health and poll frequency."

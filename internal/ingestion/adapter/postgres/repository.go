@@ -169,6 +169,56 @@ func (r *IngestionRepository) ListByUserID(ctx context.Context, userID string) (
 	return accounts, nil
 }
 
+// ListActiveForWatchRenewal queries active accounts whose watch lease expires before the given threshold.
+func (r *IngestionRepository) ListActiveForWatchRenewal(ctx context.Context, before time.Time, limit int32) ([]*domain.GmailAccount, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := r.queries.ListActiveGmailAccountsForWatchRenewal(ctx, gen.ListActiveGmailAccountsForWatchRenewalParams{
+		WatchExpiration: toPgTimestamptz(before),
+		Limit:           limit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list active gmail accounts for watch renewal: %w", err)
+	}
+
+	accounts := make([]*domain.GmailAccount, len(rows))
+	for i, row := range rows {
+		accounts[i] = toDomainGmailAccount(row)
+	}
+	return accounts, nil
+}
+
+// ListActive retrieves all accounts in active status for poll fallback.
+func (r *IngestionRepository) ListActive(ctx context.Context) ([]*domain.GmailAccount, error) {
+	rows, err := r.queries.ListActiveGmailAccounts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list active gmail accounts: %w", err)
+	}
+
+	accounts := make([]*domain.GmailAccount, len(rows))
+	for i, row := range rows {
+		accounts[i] = toDomainGmailAccount(row)
+	}
+	return accounts, nil
+}
+
+// RecordWatchLog appends a watch lifecycle event to ingestion.sender_watch_log.
+func (r *IngestionRepository) RecordWatchLog(ctx context.Context, accountID string, event string) error {
+	accountUUID, err := toPgUUID(accountID)
+	if err != nil {
+		return fmt.Errorf("invalid account uuid: %w", err)
+	}
+
+	logID := uuid.New()
+	return r.queries.InsertSenderWatchLog(ctx, gen.InsertSenderWatchLogParams{
+		ID:             pgtype.UUID{Bytes: logID, Valid: true},
+		GmailAccountID: accountUUID,
+		Event:          event,
+		OccurredAt:     toPgTimestamptz(time.Now().UTC()),
+	})
+}
+
 // --- IngestedMessageRepository implementation ---
 
 func (r *IngestionRepository) SaveBatch(ctx context.Context, messages []*domain.IngestedMessage) error {

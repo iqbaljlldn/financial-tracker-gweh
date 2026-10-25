@@ -22,6 +22,7 @@ import (
 	ingestionCmd "github.com/iqbaljlldn/financial-tracker-gweh/internal/ingestion/application/command"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/platform/config"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/platform/httpserver"
+	"github.com/iqbaljlldn/financial-tracker-gweh/internal/platform/observability"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/platform/security"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/platform/taskserver"
 )
@@ -192,11 +193,15 @@ func runAPI(ctx context.Context, logger *slog.Logger) {
 	}
 
 	ingestionMod, err := ingestion.NewModule(ingestion.Config{
-		DB:             dbPool,
-		TokenProvider:  identityMod.TokenProvider(), // Sanctioned cross-module interface [GATE]
-		AsynqClient:    asynqClient,
-		SessionManager: sessionManager,
-		Logger:         logger,
+		DB:                       dbPool,
+		TokenProvider:            identityMod.TokenProvider(), // Sanctioned cross-module interface [GATE]
+		AsynqClient:              asynqClient,
+		SessionManager:           sessionManager,
+		PubSubTopic:              cfg.Ingestion.PubSubTopic,
+		PubSubVerificationSecret: cfg.Ingestion.PubSubVerificationSecret,
+		PollFallbackInterval:     cfg.Ingestion.PollFallbackInterval,
+		HistoryFallbackDays:      cfg.Ingestion.HistoryFallbackLookbackDays,
+		Logger:                   logger,
 	})
 	if err != nil {
 		logger.Error("failed to initialize ingestion module", slog.String("error", err.Error()))
@@ -213,6 +218,9 @@ func runAPI(ctx context.Context, logger *slog.Logger) {
 		ReadTimeout:  cfg.Platform.HTTP.ReadTimeout,
 		WriteTimeout: cfg.Platform.HTTP.WriteTimeout,
 	}, logger)
+
+	// Mount Prometheus metrics endpoint per 17_observability.md §4
+	server.Router().Handle("/metrics", observability.GetMetrics().Handler())
 
 	// Mount Identity and Ingestion routes
 	identityMod.RegisterHTTPRoutes(server.Router())
@@ -282,11 +290,15 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 	}
 
 	ingestionMod, err := ingestion.NewModule(ingestion.Config{
-		DB:             dbPool,
-		TokenProvider:  identityMod.TokenProvider(),
-		AsynqClient:    asynqClient,
-		SessionManager: sessionManager,
-		Logger:         logger,
+		DB:                       dbPool,
+		TokenProvider:            identityMod.TokenProvider(),
+		AsynqClient:              asynqClient,
+		SessionManager:           sessionManager,
+		PubSubTopic:              cfg.Ingestion.PubSubTopic,
+		PubSubVerificationSecret: cfg.Ingestion.PubSubVerificationSecret,
+		PollFallbackInterval:     cfg.Ingestion.PollFallbackInterval,
+		HistoryFallbackDays:      cfg.Ingestion.HistoryFallbackLookbackDays,
+		Logger:                   logger,
 	})
 	if err != nil {
 		logger.Error("failed to initialize ingestion module", slog.String("error", err.Error()))
@@ -298,6 +310,10 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 		logger.Error("failed to start ingestion outbox relay", slog.String("error", err.Error()))
 	}
 	defer ingestionMod.StopOutboxRelay()
+
+	// Start Poll-Fallback Safety Net Scheduler [GATE - H2 Resolution]
+	ingestionMod.PollFallbackScheduler.Start(ctx)
+	defer ingestionMod.PollFallbackScheduler.Stop()
 
 	// Initialize Asynq task server
 	server, err := taskserver.NewServer(taskserver.ServerConfig{
@@ -311,30 +327,23 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 	}
 
 	mux := asynq.NewServeMux()
+	registerWorkerTaskHandlers(mux, ingestionMod, logger)
 
-	// Handler for TaskStartInitialFullSync
-	mux.HandleFunc(taskserver.TaskStartInitialFullSync, func(ctx context.Context, t *asynq.Task) error {
-		var payload struct {
-			AccountID  string `json:"accountId"`
-			WindowDays int    `json:"windowDays"`
+	// Periodic watch renewal background loop
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				_, _ = ingestionMod.RenewWatchesCmd.Handle(ctx, ingestionCmd.RenewExpiringWatchesCommand{
+					SafetyMargin: 24 * time.Hour,
+				})
+			}
 		}
-		if err := json.Unmarshal(t.Payload(), &payload); err != nil {
-			return err
-		}
-
-		logger.Info("processing TaskStartInitialFullSync", "account_id", payload.AccountID)
-		_, err := ingestionMod.StartInitialFullSyncCmd.Handle(ctx, ingestionCmd.StartInitialFullSyncCommand{
-			AccountID:  payload.AccountID,
-			WindowDays: payload.WindowDays,
-		})
-		return err
-	})
-
-	// Handler for TaskMessageIngested (Sprint 2 logging/acknowledgement)
-	mux.HandleFunc(taskserver.TaskMessageIngested, func(ctx context.Context, t *asynq.Task) error {
-		logger.Debug("worker acknowledged message ingested task", "payload_len", len(t.Payload()))
-		return nil
-	})
+	}()
 
 	logger.Info("Asynq worker server started listening to queues")
 	go func() {
@@ -346,4 +355,65 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 	<-ctx.Done()
 	logger.Info("stopping Asynq worker server...")
 	server.Stop()
+}
+
+func registerWorkerTaskHandlers(mux *asynq.ServeMux, ingestionMod *ingestion.Module, logger *slog.Logger) {
+	mux.HandleFunc(taskserver.TaskStartInitialFullSync, func(ctx context.Context, t *asynq.Task) error {
+		var payload struct {
+			AccountID  string `json:"accountId"`
+			WindowDays int    `json:"windowDays"`
+		}
+		if err := json.Unmarshal(t.Payload(), &payload); err != nil {
+			return err
+		}
+		logger.Info("processing TaskStartInitialFullSync", "account_id", payload.AccountID)
+		_, err := ingestionMod.StartInitialFullSyncCmd.Handle(ctx, ingestionCmd.StartInitialFullSyncCommand{
+			AccountID:  payload.AccountID,
+			WindowDays: payload.WindowDays,
+		})
+		return err
+	})
+
+	mux.HandleFunc(taskserver.TaskRunIncrementalSync, func(ctx context.Context, t *asynq.Task) error {
+		var payload struct {
+			AccountID string `json:"accountId"`
+			Trigger   string `json:"trigger"`
+		}
+		if err := json.Unmarshal(t.Payload(), &payload); err != nil {
+			return err
+		}
+		logger.Info("processing TaskRunIncrementalSync", "account_id", payload.AccountID, "trigger", payload.Trigger)
+		_, err := ingestionMod.IncrementalSyncCmd.Handle(ctx, ingestionCmd.RunIncrementalSyncCommand{
+			AccountID: payload.AccountID,
+			Trigger:   payload.Trigger,
+		})
+		return err
+	})
+
+	mux.HandleFunc(taskserver.TaskRegisterGmailWatch, func(ctx context.Context, t *asynq.Task) error {
+		var payload struct {
+			AccountID string `json:"accountId"`
+		}
+		if err := json.Unmarshal(t.Payload(), &payload); err != nil {
+			return err
+		}
+		logger.Info("processing TaskRegisterGmailWatch", "account_id", payload.AccountID)
+		_, err := ingestionMod.RegisterWatchCmd.Handle(ctx, ingestionCmd.RegisterGmailWatchCommand{
+			AccountID: payload.AccountID,
+		})
+		return err
+	})
+
+	mux.HandleFunc(taskserver.TaskRenewExpiringWatches, func(ctx context.Context, t *asynq.Task) error {
+		logger.Info("processing TaskRenewExpiringWatches")
+		_, err := ingestionMod.RenewWatchesCmd.Handle(ctx, ingestionCmd.RenewExpiringWatchesCommand{
+			SafetyMargin: 24 * time.Hour,
+		})
+		return err
+	})
+
+	mux.HandleFunc(taskserver.TaskMessageIngested, func(ctx context.Context, t *asynq.Task) error {
+		logger.Debug("worker acknowledged message ingested task", "payload_len", len(t.Payload()))
+		return nil
+	})
 }

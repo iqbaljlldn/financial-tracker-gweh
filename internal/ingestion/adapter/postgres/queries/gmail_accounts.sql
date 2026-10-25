@@ -31,3 +31,16 @@ SELECT * FROM ingestion.gmail_accounts
 WHERE status = 'active'
   AND (watch_expiration IS NULL OR watch_expiration <= $1)
 LIMIT $2;
+
+-- name: ListActiveGmailAccounts :many
+SELECT * FROM ingestion.gmail_accounts
+WHERE status = 'active'
+ORDER BY updated_at ASC;
+
+-- name: InsertSenderWatchLog :exec
+INSERT INTO ingestion.sender_watch_log (
+    id, gmail_account_id, event, occurred_at
+) VALUES (
+    $1, $2, $3, $4
+);
+

@@ -12,6 +12,10 @@ import {
   ArrowRight,
   Database,
   Search,
+  Trash2,
+  Unlink,
+  ShieldAlert,
+  Radio,
 } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -28,19 +32,24 @@ export default function GmailAccountsView() {
   const [syncingAccountId, setSyncingAccountId] = useState(null);
   const [funnelStage, setFunnelStage] = useState('ready'); // ready, linking, syncing, complete
 
+  // Disconnect Modal State per FR-USER-02
+  const [disconnectModalAccount, setDisconnectModalAccount] = useState(null);
+  const [retentionChoice, setRetentionChoice] = useState(null); // 'keep' | 'purge' (strictly no silent default [GATE])
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
+
   const pollTimerRef = useRef(null);
 
   const fetchAccounts = async () => {
     try {
       setError(null);
       const data = await apiClient.listGmailAccounts();
-      setAccounts(data || []);
+      const accountList = data?.accounts || data || [];
+      setAccounts(accountList);
 
-      // Check if any account is currently in initial_sync
-      const hasSyncing = (data || []).some((a) => a.status === 'initial_sync' || a.status === 'linking');
+      const hasSyncing = accountList.some((a) => a.status === 'initial_sync' || a.status === 'linking');
       if (hasSyncing) {
         setFunnelStage('syncing');
-      } else if ((data || []).some((a) => a.status === 'active')) {
+      } else if (accountList.some((a) => a.status === 'active')) {
         setFunnelStage('complete');
       }
     } catch (err) {
@@ -53,18 +62,21 @@ export default function GmailAccountsView() {
   useEffect(() => {
     fetchAccounts();
 
-    // Auto-poll if any account is in initial_sync or linking
     pollTimerRef.current = setInterval(() => {
-      apiClient.listGmailAccounts().then((data) => {
-        if (data) {
-          setAccounts(data);
-          const hasSyncing = data.some((a) => a.status === 'initial_sync' || a.status === 'linking');
-          if (!hasSyncing && data.some((a) => a.status === 'active')) {
-            setFunnelStage('complete');
+      apiClient
+        .listGmailAccounts()
+        .then((data) => {
+          const accountList = data?.accounts || data || [];
+          if (accountList.length > 0) {
+            setAccounts(accountList);
+            const hasSyncing = accountList.some((a) => a.status === 'initial_sync' || a.status === 'linking');
+            if (!hasSyncing && accountList.some((a) => a.status === 'active')) {
+              setFunnelStage('complete');
+            }
           }
-        }
-      }).catch(() => {});
-    }, 3000);
+        })
+        .catch(() => {});
+    }, 4000);
 
     return () => {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
@@ -124,12 +136,30 @@ export default function GmailAccountsView() {
     }
   };
 
+  const handleConfirmDisconnect = async () => {
+    if (!disconnectModalAccount || !retentionChoice) return;
+
+    try {
+      setIsDisconnecting(true);
+      setError(null);
+      const purge = retentionChoice === 'purge';
+      await apiClient.disconnectGmailAccount(disconnectModalAccount.id, purge);
+      setDisconnectModalAccount(null);
+      setRetentionChoice(null);
+      await fetchAccounts();
+    } catch (err) {
+      setError(err.message || 'Failed to disconnect account');
+    } finally {
+      setIsDisconnecting(false);
+    }
+  };
+
   const getStatusBadge = (status) => {
     switch (status) {
       case 'active':
         return (
           <span className="badge badge-emerald" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
-            <CheckCircle2 size={12} /> Active • Synchronized
+            <CheckCircle2 size={12} /> Active • Dual-Trigger Realtime
           </span>
         );
       case 'initial_sync':
@@ -146,8 +176,34 @@ export default function GmailAccountsView() {
         );
       case 'disconnected':
         return (
-          <span className="badge" style={{ background: 'rgba(244, 63, 94, 0.15)', color: '#fb7185', border: '1px solid rgba(244, 63, 94, 0.3)' }}>
-            <AlertCircle size={12} /> Consent Revoked
+          <span
+            className="badge"
+            style={{
+              background: 'rgba(244, 63, 94, 0.15)',
+              color: '#fb7185',
+              border: '1px solid rgba(244, 63, 94, 0.3)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '5px',
+            }}
+          >
+            <AlertCircle size={12} /> Disconnected • Sync Suspended
+          </span>
+        );
+      case 'error':
+        return (
+          <span
+            className="badge"
+            style={{
+              background: 'rgba(239, 68, 68, 0.2)',
+              color: '#f87171',
+              border: '1px solid rgba(239, 68, 68, 0.4)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '5px',
+            }}
+          >
+            <ShieldAlert size={12} /> Mailbox Error
           </span>
         );
       default:
@@ -164,9 +220,9 @@ export default function GmailAccountsView() {
       {/* Top Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '16px' }}>
         <div>
-          <h1 style={{ fontSize: '26px', marginBottom: '6px' }}>Gmail Account Onboarding</h1>
+          <h1 style={{ fontSize: '26px', marginBottom: '6px' }}>Gmail Account Management</h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-            Standalone Ingestion Module • Read-only mailbox connector with 90-day lookback bounded sync
+            Real-time Gmail Pub/Sub watch with 15-minute scheduled poll-fallback safety net (H2 resolution)
           </p>
         </div>
 
@@ -205,7 +261,7 @@ export default function GmailAccountsView() {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: 600 }}>
             <ShieldCheck size={18} color="#34d399" />
-            <span>Onboarding Pipeline Funnel:</span>
+            <span>Ingestion Architecture Pipeline:</span>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '12px' }}>
@@ -214,11 +270,11 @@ export default function GmailAccountsView() {
             </span>
             <ArrowRight size={12} color="var(--text-muted)" />
             <span style={{ color: funnelStage === 'syncing' || funnelStage === 'complete' ? '#38bdf8' : 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <Clock size={13} /> 2. 90-Day Full Sync
+              <Clock size={13} /> 2. 90-Day Initial Sync
             </span>
             <ArrowRight size={12} color="var(--text-muted)" />
             <span style={{ color: funnelStage === 'complete' ? '#34d399' : 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <CheckCircle2 size={13} /> 3. Realtime Active
+              <CheckCircle2 size={13} /> 3. Dual-Trigger Push+Poll Active
             </span>
           </div>
         </div>
@@ -245,12 +301,12 @@ export default function GmailAccountsView() {
         </div>
       )}
 
-      {/* Connect Account Form Modal / Accordion */}
+      {/* Connect Account Form Modal */}
       {isLinkingOpen && (
         <div className="glass-panel" style={{ padding: '24px', marginBottom: '28px', border: '1px solid var(--border-active)' }}>
           <h3 style={{ fontSize: '16px', marginBottom: '8px' }}>Link a Gmail Account</h3>
           <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '20px' }}>
-            Choose whether to link your primary authenticated address or enter a secondary Gmail mailbox.
+            Connect your Gmail mailbox for real-time transaction ingestion. Requests least-privilege <code>gmail.readonly</code> permissions.
           </p>
 
           <form onSubmit={handleLinkDirect} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -272,7 +328,7 @@ export default function GmailAccountsView() {
 
               <div>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>
-                  Lookback Window (Days)
+                  Initial Sync Lookback (Days)
                 </label>
                 <select
                   value={syncDays}
@@ -323,7 +379,6 @@ export default function GmailAccountsView() {
 
       {/* Account List View */}
       {accounts.length === 0 && !isLoading ? (
-        /* Empty-state messaging for a newly-linked account with zero mailboxes */
         <div
           className="glass-panel"
           style={{
@@ -352,7 +407,7 @@ export default function GmailAccountsView() {
           </div>
           <h3 style={{ fontSize: '18px', marginBottom: '8px' }}>No Mailboxes Connected Yet</h3>
           <p style={{ color: 'var(--text-secondary)', maxWidth: '440px', fontSize: '14px', marginBottom: '24px' }}>
-            Link your Gmail mailbox to enable automated transaction extraction. We request least-privilege <code>gmail.readonly</code> access and never store raw passwords.
+            Link your Gmail mailbox to enable automated transaction extraction. We request least-privilege <code>gmail.readonly</code> access.
           </p>
           <button
             onClick={() => setIsLinkingOpen(true)}
@@ -367,9 +422,17 @@ export default function GmailAccountsView() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {accounts.map((acc) => {
             const isSyncing = acc.status === 'initial_sync' || syncingAccountId === acc.id;
+            const isSuspended = acc.status === 'disconnected' || acc.status === 'error';
 
             return (
-              <div key={acc.id} className="glass-card" style={{ padding: '24px' }}>
+              <div
+                key={acc.id}
+                className="glass-card"
+                style={{
+                  padding: '24px',
+                  border: isSuspended ? '1px solid rgba(244, 63, 94, 0.3)' : undefined,
+                }}
+              >
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                     <div
@@ -377,8 +440,8 @@ export default function GmailAccountsView() {
                         width: '48px',
                         height: '48px',
                         borderRadius: '12px',
-                        background: 'rgba(66, 133, 244, 0.15)',
-                        color: '#4285F4',
+                        background: isSuspended ? 'rgba(244, 63, 94, 0.15)' : 'rgba(66, 133, 244, 0.15)',
+                        color: isSuspended ? '#fb7185' : '#4285F4',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -400,27 +463,92 @@ export default function GmailAccountsView() {
                         <span>Lookback: <strong>{acc.initialSyncWindowDays || 90} Days</strong></span>
                         {acc.lastHistoryId && (
                           <span>
-                            Cursor: <code style={{ color: '#38bdf8' }}>{acc.lastHistoryId}</code>
+                            History Cursor: <code style={{ color: '#38bdf8' }}>{acc.lastHistoryId}</code>
                           </span>
+                        )}
+                        {acc.watchExpiration && (
+                          <span>Watch Expires: {new Date(acc.watchExpiration).toLocaleDateString()}</span>
                         )}
                         <span>Linked: {new Date(acc.createdAt).toLocaleDateString()}</span>
                       </div>
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <button
-                      onClick={() => handleTriggerSync(acc.id)}
-                      disabled={isSyncing}
-                      className="btn-secondary"
-                      style={{ padding: '8px 14px', fontSize: '13px' }}
-                      title="Run manual synchronization"
-                    >
-                      <RefreshCw size={13} className={isSyncing ? 'spin' : ''} />
-                      <span>{isSyncing ? 'Syncing...' : 'Sync Now'}</span>
-                    </button>
+                  {/* Actions Bar */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    {isSuspended ? (
+                      /* Reconnect CTA for disconnected or error accounts [GATE] */
+                      <button
+                        onClick={handleConnectOAuth}
+                        className="btn-primary"
+                        style={{
+                          padding: '8px 16px',
+                          fontSize: '13px',
+                          background: 'linear-gradient(135deg, #f43f5e 0%, #e11d48 100%)',
+                        }}
+                      >
+                        <RefreshCw size={13} />
+                        <span>Reconnect Mailbox</span>
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => handleTriggerSync(acc.id)}
+                          disabled={isSyncing}
+                          className="btn-secondary"
+                          style={{ padding: '8px 14px', fontSize: '13px' }}
+                          title="Run manual synchronization"
+                        >
+                          <RefreshCw size={13} className={isSyncing ? 'spin' : ''} />
+                          <span>{isSyncing ? 'Syncing...' : 'Sync Now'}</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setDisconnectModalAccount(acc);
+                            setRetentionChoice(null); // Force explicit selection
+                          }}
+                          className="btn-secondary"
+                          style={{
+                            padding: '8px 12px',
+                            fontSize: '13px',
+                            color: '#fb7185',
+                            borderColor: 'rgba(244, 63, 94, 0.2)',
+                          }}
+                          title="Disconnect account and manage data"
+                        >
+                          <Unlink size={13} />
+                          <span>Disconnect</span>
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
+
+                {/* Suspended Account Banner */}
+                {isSuspended && (
+                  <div
+                    style={{
+                      marginTop: '16px',
+                      padding: '12px 16px',
+                      background: 'rgba(244, 63, 94, 0.08)',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid rgba(244, 63, 94, 0.2)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '12px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: '#fb7185' }}>
+                      <AlertTriangle size={16} />
+                      <span>
+                        Mailbox synchronization is suspended (OAuth consent was revoked or lease expired). Click Reconnect to resume real-time ingestion.
+                      </span>
+                    </div>
+                  </div>
+                )}
 
                 {/* Syncing Progress Indication Bar */}
                 {acc.status === 'initial_sync' && (
@@ -448,6 +576,158 @@ export default function GmailAccountsView() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Disconnect & Data Purge Choice Modal per FR-USER-02 [GATE] */}
+      {disconnectModalAccount && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '20px',
+          }}
+        >
+          <div
+            className="glass-panel"
+            style={{
+              maxWidth: '540px',
+              width: '100%',
+              padding: '28px',
+              border: '1px solid rgba(244, 63, 94, 0.3)',
+              boxShadow: '0 20px 40px rgba(0, 0, 0, 0.6)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+              <div
+                style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '10px',
+                  background: 'rgba(244, 63, 94, 0.15)',
+                  color: '#fb7185',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Trash2 size={20} />
+              </div>
+              <div>
+                <h3 style={{ fontSize: '18px', fontWeight: 600 }}>Disconnect Gmail Mailbox</h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
+                  {disconnectModalAccount.emailAddress}
+                </p>
+              </div>
+            </div>
+
+            <p style={{ color: 'var(--text-secondary)', fontSize: '13px', lineHeight: '1.6', marginBottom: '20px' }}>
+              Disconnecting will revoke the real-time push watch lease and stop ingestion. Under GDPR and platform privacy rules (FR-USER-02), please explicitly choose how your existing historical transaction data should be handled:
+            </p>
+
+            {/* Explicit Retention Choice Cards — No Silent Default [GATE] */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
+              <div
+                onClick={() => setRetentionChoice('keep')}
+                style={{
+                  padding: '16px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: retentionChoice === 'keep' ? '2px solid #34d399' : '1px solid var(--border-subtle)',
+                  background: retentionChoice === 'keep' ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                  <input
+                    type="radio"
+                    name="retention"
+                    checked={retentionChoice === 'keep'}
+                    onChange={() => setRetentionChoice('keep')}
+                    style={{ marginTop: '3px' }}
+                  />
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: '14px', color: retentionChoice === 'keep' ? '#34d399' : 'var(--text-primary)' }}>
+                      Keep My Financial Data (Recommended)
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px', lineHeight: '1.4' }}>
+                      Stop syncing new emails, but retain existing transactions, ledger records, and analytics. You can reconnect this mailbox anytime.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                onClick={() => setRetentionChoice('purge')}
+                style={{
+                  padding: '16px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: retentionChoice === 'purge' ? '2px solid #fb7185' : '1px solid var(--border-subtle)',
+                  background: retentionChoice === 'purge' ? 'rgba(244, 63, 94, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s ease',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                  <input
+                    type="radio"
+                    name="retention"
+                    checked={retentionChoice === 'purge'}
+                    onChange={() => setRetentionChoice('purge')}
+                    style={{ marginTop: '3px' }}
+                  />
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: '14px', color: retentionChoice === 'purge' ? '#fb7185' : 'var(--text-primary)' }}>
+                      Delete All Data (GDPR Right-to-be-Forgotten)
+                    </div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px', lineHeight: '1.4' }}>
+                      Stop syncing and permanently cascade-delete all financial transactions, candidates, and ingested messages associated with this mailbox (Diagram 8).
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setDisconnectModalAccount(null);
+                  setRetentionChoice(null);
+                }}
+                className="btn-secondary"
+                style={{ padding: '9px 16px', fontSize: '13px' }}
+                disabled={isDisconnecting}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConfirmDisconnect}
+                disabled={!retentionChoice || isDisconnecting}
+                className="btn-primary"
+                style={{
+                  padding: '9px 20px',
+                  fontSize: '13px',
+                  background:
+                    retentionChoice === 'purge'
+                      ? 'linear-gradient(135deg, #e11d48 0%, #be123c 100%)'
+                      : 'var(--accent-primary)',
+                  opacity: !retentionChoice || isDisconnecting ? 0.5 : 1,
+                  cursor: !retentionChoice || isDisconnecting ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {isDisconnecting ? 'Disconnecting...' : 'Confirm Disconnect'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
