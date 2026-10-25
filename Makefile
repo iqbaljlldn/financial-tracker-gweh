@@ -23,7 +23,8 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
 LDFLAGS := -X main.Version=$(VERSION) -X main.Commit=$(COMMIT)
 
-DATABASE_URL ?= postgres://postgres:postgres@localhost:5432/financial_tracker?sslmode=disable
+DATABASE_PORT ?= 5433
+DATABASE_URL ?= postgres://postgres:postgres@localhost:$(DATABASE_PORT)/financial_tracker?sslmode=disable
 
 all: lint test-unit build
 
@@ -40,6 +41,18 @@ run-api:
 ## run-worker: Run platform locally in Asynq background worker mode
 run-worker:
 	go run -ldflags "$(LDFLAGS)" ./cmd/platform --mode=worker
+
+## web-install: Install frontend dependencies
+web-install:
+	npm --prefix web install
+
+## web-build: Build the frontend single-page application
+web-build:
+	npm --prefix web run build
+
+## web-dev: Start the frontend development server
+web-dev:
+	npm --prefix web run dev
 
 ## sqlc-generate: Regenerate all modules' adapter/postgres/gen/ code from db/sqlc.yaml
 sqlc-generate:
@@ -65,8 +78,9 @@ migrate-up:
 		echo "Applying migrations to $(DATABASE_URL)..."; \
 		for schema_dir in db/migrations/*; do \
 			if [ -d "$$schema_dir" ] && ls "$$schema_dir"/*.sql >/dev/null 2>&1; then \
-				echo "Migrating $$schema_dir..."; \
-				$(GOOSE) -dir "$$schema_dir" postgres "$(DATABASE_URL)" up; \
+				schema_name=$$(basename "$$schema_dir"); \
+				echo "Migrating $$schema_dir (-table $$schema_name.goose_db_version)..."; \
+				$(GOOSE) -dir "$$schema_dir" -table "$$schema_name.goose_db_version" postgres "$(DATABASE_URL)" up; \
 			fi \
 		done; \
 		echo "Migrations completed."; \
@@ -80,7 +94,8 @@ migrate-down:
 		echo "Rolling back migrations..."; \
 		for schema_dir in db/migrations/*; do \
 			if [ -d "$$schema_dir" ] && ls "$$schema_dir"/*.sql >/dev/null 2>&1; then \
-				$(GOOSE) -dir "$$schema_dir" postgres "$(DATABASE_URL)" down; \
+				schema_name=$$(basename "$$schema_dir"); \
+				$(GOOSE) -dir "$$schema_dir" -table "$$schema_name.goose_db_version" postgres "$(DATABASE_URL)" down; \
 			fi \
 		done; \
 	else \

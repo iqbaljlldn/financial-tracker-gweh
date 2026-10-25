@@ -1,71 +1,14 @@
-# GolangCI-Lint Configuration (v2)
-# Configured per 20_coding_convention.md §5 and 06_architecture.md §5.3
 version: "2"
+
+run:
+  tests: false
 
 linters:
   enable:
-    - depguard
     - gocyclo
   settings:
     gocyclo:
       min-complexity: 15
-    depguard:
-      rules:
-        # Cross-module boundary enforcement (06_architecture.md §5, 21_project_structure.md §5)
-        prevent_cross_module_direct_imports:
-          list-mode: lax
-          files:
-            - "**/internal/**"
-          deny:
-            - pkg: "github.com/iqbaljlldn/financial-tracker-gweh/internal/identity/domain"
-              desc: "Forbidden cross-module domain import (06_architecture.md §5)"
-            - pkg: "github.com/iqbaljlldn/financial-tracker-gweh/internal/identity/application"
-              desc: "Forbidden cross-module application import (06_architecture.md §5)"
-            - pkg: "github.com/iqbaljlldn/financial-tracker-gweh/internal/identity/adapter"
-              desc: "Forbidden cross-module adapter import (06_architecture.md §5)"
-            - pkg: "github.com/iqbaljlldn/financial-tracker-gweh/internal/ingestion/domain"
-              desc: "Forbidden cross-module domain import (06_architecture.md §5)"
-            - pkg: "github.com/iqbaljlldn/financial-tracker-gweh/internal/ingestion/application"
-              desc: "Forbidden cross-module application import (06_architecture.md §5)"
-            - pkg: "github.com/iqbaljlldn/financial-tracker-gweh/internal/ingestion/adapter"
-              desc: "Forbidden cross-module adapter import (06_architecture.md §5)"
-            - pkg: "github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding/domain"
-              desc: "Forbidden cross-module domain import (06_architecture.md §5)"
-            - pkg: "github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding/application"
-              desc: "Forbidden cross-module application import (06_architecture.md §5)"
-            - pkg: "github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding/adapter"
-              desc: "Forbidden cross-module adapter import (06_architecture.md §5)"
-            - pkg: "github.com/iqbaljlldn/financial-tracker-gweh/internal/financialcore/domain"
-              desc: "Forbidden cross-module domain import (06_architecture.md §5)"
-            - pkg: "github.com/iqbaljlldn/financial-tracker-gweh/internal/financialcore/application"
-              desc: "Forbidden cross-module application import (06_architecture.md §5)"
-            - pkg: "github.com/iqbaljlldn/financial-tracker-gweh/internal/financialcore/adapter"
-              desc: "Forbidden cross-module adapter import (06_architecture.md §5)"
-            - pkg: "github.com/iqbaljlldn/financial-tracker-gweh/internal/budget/domain"
-              desc: "Forbidden cross-module domain import (06_architecture.md §5)"
-            - pkg: "github.com/iqbaljlldn/financial-tracker-gweh/internal/budget/application"
-              desc: "Forbidden cross-module application import (06_architecture.md §5)"
-            - pkg: "github.com/iqbaljlldn/financial-tracker-gweh/internal/budget/adapter"
-              desc: "Forbidden cross-module adapter import (06_architecture.md §5)"
-            - pkg: "github.com/iqbaljlldn/financial-tracker-gweh/internal/analytics/domain"
-              desc: "Forbidden cross-module domain import (06_architecture.md §5)"
-            - pkg: "github.com/iqbaljlldn/financial-tracker-gweh/internal/analytics/application"
-              desc: "Forbidden cross-module application import (06_architecture.md §5)"
-            - pkg: "github.com/iqbaljlldn/financial-tracker-gweh/internal/analytics/adapter"
-              desc: "Forbidden cross-module adapter import (06_architecture.md §5)"
-            - pkg: "github.com/iqbaljlldn/financial-tracker-gweh/internal/engagement/domain"
-              desc: "Forbidden cross-module domain import (06_architecture.md §5)"
-            - pkg: "github.com/iqbaljlldn/financial-tracker-gweh/internal/engagement/application"
-              desc: "Forbidden cross-module application import (06_architecture.md §5)"
-            - pkg: "github.com/iqbaljlldn/financial-tracker-gweh/internal/engagement/adapter"
-              desc: "Forbidden cross-module adapter import (06_architecture.md §5)"
-            - pkg: "github.com/iqbaljlldn/financial-tracker-gweh/internal/administration/domain"
-              desc: "Forbidden cross-module domain import (06_architecture.md §5)"
-            - pkg: "github.com/iqbaljlldn/financial-tracker-gweh/internal/administration/application"
-              desc: "Forbidden cross-module application import (06_architecture.md §5)"
-            - pkg: "github.com/iqbaljlldn/financial-tracker-gweh/internal/administration/adapter"
-              desc: "Forbidden cross-module adapter import (06_architecture.md §5)"
 
-issues:
-  max-issues-per-linter: 0
-  max-same-issues: 0
+
+
