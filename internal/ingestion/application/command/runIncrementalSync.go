@@ -271,6 +271,12 @@ func (h *RunIncrementalSyncHandler) handleFetchError(ctx context.Context, accoun
 			}
 			return tx.Outbox.SaveEvent(ctx, "ingestion.gmail_account", account.ID(), domain.EventAccountDisconnected, payload)
 		})
+	} else if strings.Contains(strings.ToLower(err.Error()), "oauth token not found") {
+		h.logger.Warn("incremental sync aborted: no OAuth credentials found for account",
+			slog.String("accountId", account.ID()),
+			slog.String("email", account.EmailAddress()),
+			slog.String("reason", "Account has not completed Google OAuth authentication or token has been purged"),
+		)
 	}
 	return err
 }

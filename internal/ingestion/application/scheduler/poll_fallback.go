@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -103,10 +104,19 @@ func (s *PollFallbackScheduler) RunOnce(ctx context.Context) {
 
 		res, err := s.syncHandler.Handle(ctx, cmd)
 		if err != nil {
-			s.logger.Warn("poll-fallback sync failed for account",
-				"accountId", acc.ID(),
-				"error", err,
-			)
+			if strings.Contains(strings.ToLower(err.Error()), "oauth token not found") {
+				s.logger.Warn("poll-fallback sync skipped: no OAuth token found for account (unauthenticated or leftover test account)",
+					slog.String("accountId", acc.ID()),
+					slog.String("email", acc.EmailAddress()),
+					slog.String("hint", "Complete Google OAuth flow to link this account, or remove stale test records from ingestion.gmail_accounts"),
+				)
+			} else {
+				s.logger.Warn("poll-fallback sync failed for account",
+					slog.String("accountId", acc.ID()),
+					slog.String("email", acc.EmailAddress()),
+					slog.String("error", err.Error()),
+				)
+			}
 			continue
 		}
 

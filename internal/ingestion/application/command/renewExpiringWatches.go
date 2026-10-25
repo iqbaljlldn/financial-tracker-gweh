@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/ingestion/domain"
@@ -75,10 +76,18 @@ func (h *RenewExpiringWatchesHandler) Handle(ctx context.Context, cmd RenewExpir
 		watchRes, err := h.registerWatch.Handle(ctx, RegisterGmailWatchCommand{AccountID: acc.ID()})
 		if err != nil || (watchRes != nil && watchRes.PollOnlyMode) {
 			result.FailedCount++
-			h.logger.Warn("renewal failed for account, proceeding with batch",
-				"accountId", acc.ID(),
-				"error", err,
-			)
+			if err != nil && strings.Contains(strings.ToLower(err.Error()), "oauth token not found") {
+				h.logger.Warn("watch renewal skipped: account has no active OAuth credentials",
+					slog.String("accountId", acc.ID()),
+					slog.String("email", acc.EmailAddress()),
+					slog.String("hint", "Complete Google OAuth flow or remove stale account"),
+				)
+			} else {
+				h.logger.Warn("renewal failed for account, proceeding with batch",
+					slog.String("accountId", acc.ID()),
+					slog.Any("error", err),
+				)
+			}
 			continue
 		}
 		result.RenewedCount++
