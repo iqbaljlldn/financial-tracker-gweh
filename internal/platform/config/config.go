@@ -129,6 +129,9 @@ func Load(configPath string, envPaths ...string) (*Config, error) {
 	}
 
 	// Try loading .env files if present (without overriding existing environment variables)
+	if len(envPaths) == 0 {
+		envPaths = []string{"config/secrets.env", ".env", "secrets.env"}
+	}
 	for _, envPath := range envPaths {
 		_ = loadDotEnv(envPath)
 	}

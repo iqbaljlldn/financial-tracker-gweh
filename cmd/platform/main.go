@@ -84,9 +84,9 @@ func main() {
 func loadAppConfig(logger *slog.Logger) *config.Config {
 	cfgPath := os.Getenv("CONFIG_PATH")
 	if cfgPath == "" {
-		cfgPath = "config/config.yaml"
+		cfgPath = "config/config.dev.yaml"
 	}
-	cfg, err := config.Load(cfgPath)
+	cfg, err := config.Load(cfgPath, "config/secrets.env", ".env", "secrets.env")
 	if err != nil {
 		logger.Warn("could not load YAML config, falling back to defaults/env", slog.String("error", err.Error()))
 		return &config.Config{}

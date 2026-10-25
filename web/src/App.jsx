@@ -4,17 +4,27 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import LandingPage from './components/LandingPage';
 import AppShell from './components/AppShell';
 import OAuthCallback from './components/OAuthCallback';
+import { apiClient } from './api/client';
 
 function MainRouter() {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, refreshProfile } = useAuth();
   const [isHandlingCallback, setIsHandlingCallback] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    if (params.has('sessionToken')) {
+      const sessionToken = params.get('sessionToken');
+      const refreshToken = params.get('refreshToken');
+      const expiresAt = params.get('expiresAt');
+      apiClient.setSession(sessionToken, refreshToken, expiresAt);
+      window.history.replaceState({}, document.title, window.location.pathname);
+      refreshProfile();
+      return;
+    }
     if ((params.has('code') && params.has('state')) || params.has('error')) {
       setIsHandlingCallback(true);
     }
-  }, []);
+  }, [refreshProfile]);
 
   if (isHandlingCallback) {
     return (

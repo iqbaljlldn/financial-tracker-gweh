@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -88,6 +89,11 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 			auth.Post("/refresh", h.RefreshSession)
 		})
 
+		r.Route(prefix+"/oauth", func(oauth chi.Router) {
+			oauth.Post("/google/initiate", h.InitiateGoogleAuth)
+			oauth.Get("/google/callback", h.GoogleAuthCallback)
+		})
+
 		r.Route(prefix+"/me", func(me chi.Router) {
 			me.Use(h.SessionAuthMiddleware)
 			me.Get("/", h.GetMe)
@@ -96,6 +102,7 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 	}
 
 	mount("/api/v1")
+	mount("/v1")
 	mount("")
 }
 
@@ -195,11 +202,23 @@ func (h *Handler) GoogleAuthCallback(w http.ResponseWriter, r *http.Request) {
 		CodeVerifier: verifier,
 	})
 	if err != nil {
+		if strings.Contains(r.Header.Get("Accept"), "text/html") {
+			http.Redirect(w, r, "http://localhost:3000/?error="+url.QueryEscape(err.Error()), http.StatusFound)
+			return
+		}
 		if errors.Is(err, domain.ErrEmailAlreadyLinked) {
 			writeError(w, http.StatusConflict, "EMAIL_ALREADY_LINKED", "Email is already linked to another account", "")
 			return
 		}
 		writeError(w, http.StatusBadRequest, "OAUTH_CALLBACK_INVALID", err.Error(), "")
+		return
+	}
+
+	if strings.Contains(r.Header.Get("Accept"), "text/html") {
+		targetURL := "http://localhost:3000/?sessionToken=" + url.QueryEscape(res.SessionToken) +
+			"&refreshToken=" + url.QueryEscape(res.RefreshToken) +
+			"&expiresAt=" + url.QueryEscape(FormatRFC3339(res.ExpiresAt))
+		http.Redirect(w, r, targetURL, http.StatusFound)
 		return
 	}
 
