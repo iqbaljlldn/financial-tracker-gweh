@@ -25,6 +25,8 @@ ingestion:
   max_retries: 3
 
 understanding:
+  provider: "groq" # options: "groq", "gemini", "openai", "openrouter"
+  model: "qwen/qwen3.8-27b" # groq: qwen/qwen3.8-27b; gemini: gemini-flash-latest
   confidence_threshold: 0.85
   ai_rate_limit_per_second: 5
   ai_request_timeout: "10s"

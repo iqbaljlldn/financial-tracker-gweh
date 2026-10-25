@@ -24,6 +24,8 @@ ingestion:
   max_retries: 5
 
 understanding:
+  provider: "groq"
+  model: "qwen/qwen3.8-27b"
   confidence_threshold: 0.85
   ai_rate_limit_per_second: 20
   ai_request_timeout: "10s"
