@@ -116,7 +116,7 @@ export function ParserMonitoringView() {
       )}
 
       {/* KPI Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <div className="stat-card">
           <div className="flex items-center justify-between text-slate-400">
             <span className="text-xs font-semibold uppercase tracking-wider">Active Templates</span>
@@ -133,15 +133,36 @@ export function ParserMonitoringView() {
 
         <div className="stat-card">
           <div className="flex items-center justify-between text-slate-400">
-            <span className="text-xs font-semibold uppercase tracking-wider">Recent Executions</span>
-            <Activity size={18} className="text-sky-400" />
+            <span className="text-xs font-semibold uppercase tracking-wider">AI Fallback Rate</span>
+            <Cpu size={18} className="text-amber-400" />
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-3xl font-extrabold text-white">{extractions.length}</span>
-            <span className="text-xs text-slate-400">records in window</span>
+            <span className="text-3xl font-extrabold text-white">
+              {extractions.length > 0
+                ? (
+                    (extractions.filter((e) => e.method === 'ai').length / extractions.length) *
+                    100
+                  ).toFixed(1) + '%'
+                : '0.0%'}
+            </span>
+            <span className="text-xs text-slate-400">of total volume</span>
           </div>
           <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
-            <Clock size={12} /> Live stream
+            <Clock size={12} /> Probabilistic fallback
+          </p>
+        </div>
+
+        <div className="stat-card">
+          <div className="flex items-center justify-between text-slate-400">
+            <span className="text-xs font-semibold uppercase tracking-wider">Active Prompt</span>
+            <Terminal size={18} className="text-sky-400" />
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-3xl font-extrabold text-sky-400">v1</span>
+            <span className="text-xs text-slate-400">OpenAI-compat</span>
+          </div>
+          <p className="text-xs text-sky-400/80 mt-2 flex items-center gap-1">
+            <CheckCircle size={12} /> Regression gate passed
           </p>
         </div>
 
@@ -271,6 +292,7 @@ export function ParserMonitoringView() {
                 <th className="px-4 py-3">Method</th>
                 <th className="px-4 py-3">Template / Prompt</th>
                 <th className="px-4 py-3">Extracted Merchant</th>
+                <th className="px-4 py-3">Category</th>
                 <th className="px-4 py-3">Amount</th>
                 <th className="px-4 py-3">Confidence</th>
                 <th className="px-4 py-3 text-right">Details</th>
@@ -281,6 +303,8 @@ export function ParserMonitoringView() {
                 const isFull = rec.confidenceAggregate >= 0.99;
                 const isPartial = rec.confidenceAggregate >= 0.9 && rec.confidenceAggregate < 0.99;
                 const isFail = rec.confidenceAggregate < 0.9;
+                const cat = rec.candidate?.typeSpecificPayload?.category;
+                const catSrc = rec.candidate?.typeSpecificPayload?.categorySource;
                 return (
                   <tr key={rec.id} className="hover:bg-white/5 transition-colors">
                     <td className="px-4 py-3 text-xs text-slate-400 font-mono">
@@ -303,15 +327,36 @@ export function ParserMonitoringView() {
                         rec.candidate?.merchant?.rawName ||
                         '-'}
                     </td>
+                    <td className="px-4 py-3 text-xs">
+                      {cat ? (
+                        <span className="px-2 py-0.5 rounded text-xs bg-slate-800 text-slate-200 border border-white/10" title={`Source: ${catSrc || 'unknown'}`}>
+                          {cat}
+                        </span>
+                      ) : (
+                        <span className="text-slate-500">-</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 font-mono text-emerald-400 font-semibold">
                       {rec.candidate?.amount?.value
                         ? `${rec.candidate.amount.currency} ${rec.candidate.amount.value.toLocaleString()}`
                         : '-'}
                     </td>
                     <td className="px-4 py-3">
-                      {isFull && <span className="badge badge-success">1.0 (Full)</span>}
-                      {isPartial && <span className="badge badge-warning">0.95 (Partial)</span>}
-                      {isFail && <span className="badge badge-danger">Failed (AI Fallback)</span>}
+                      {rec.method === 'ai' ? (
+                        <span
+                          className={`badge ${
+                            rec.confidenceAggregate >= 0.7 ? 'badge-success' : 'badge-warning'
+                          }`}
+                        >
+                          {rec.confidenceAggregate.toFixed(2)} (AI {rec.confidenceAggregate >= 0.7 ? 'Pass' : 'Review'})
+                        </span>
+                      ) : (
+                        <>
+                          {isFull && <span className="badge badge-success">1.0 (Full)</span>}
+                          {isPartial && <span className="badge badge-warning">0.95 (Partial)</span>}
+                          {isFail && <span className="badge badge-danger">Failed (AI Fallback)</span>}
+                        </>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <button

@@ -228,7 +228,13 @@ func runAPI(ctx context.Context, logger *slog.Logger) {
 		DB:             dbPool,
 		AsynqClient:    asynqClient,
 		SessionManager: sessionManager,
-		Logger:         logger,
+		AIConfig: understanding.AIConfig{
+			BaseURL:      cfg.Understanding.ResolvedBaseURL,
+			APIKey:       cfg.Understanding.ResolvedAPIKey,
+			DefaultModel: cfg.Understanding.Model,
+			Timeout:      cfg.Understanding.AIRequestTimeout,
+		},
+		Logger: logger,
 	})
 	if err != nil {
 		logger.Error("failed to initialize understanding module", slog.String("error", err.Error()))
@@ -324,7 +330,13 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 		DB:             dbPool,
 		AsynqClient:    asynqClient,
 		SessionManager: sessionManager,
-		Logger:         logger,
+		AIConfig: understanding.AIConfig{
+			BaseURL:      cfg.Understanding.ResolvedBaseURL,
+			APIKey:       cfg.Understanding.ResolvedAPIKey,
+			DefaultModel: cfg.Understanding.Model,
+			Timeout:      cfg.Understanding.AIRequestTimeout,
+		},
+		Logger: logger,
 	})
 	if err != nil {
 		logger.Error("failed to initialize understanding module in worker", slog.String("error", err.Error()))

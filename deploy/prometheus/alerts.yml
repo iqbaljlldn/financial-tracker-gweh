@@ -62,3 +62,16 @@ groups:
           summary: "Deterministic parser template failure rate exceeded 5% threshold"
           description: "Template for sender {{ $labels.sender_pattern }} has a failure rate of {{ $value | humanizePercentage }} over trailing 1h. Email format may have changed, triggering costly AI fallback."
           runbook_url: "docs/13_email_parser.md#82-spike-detection--alerting"
+
+      # [GATE]: AI queue backpressure (depth or oldest-task-age threshold)
+      # Traces to 06_architecture.md §6.5 (Hotspot H3) and 17_observability.md §8
+      - alert: AIQueueBackpressure
+        expr: understanding_ai_queue_depth{queue_name="understanding:ai"} > 100 or understanding_ai_oldest_task_age_seconds{queue_name="understanding:ai"} > 300
+        for: 2m
+        labels:
+          severity: high
+          module: understanding
+        annotations:
+          summary: "AI extraction fallback queue backpressure detected (H3 resolution)"
+          description: "Queue understanding:ai depth is {{ $value }} or oldest pending task exceeds 5m threshold. Correlate with parser failure rate spike."
+          runbook_url: "docs/06_architecture.md#65-resolving-hotspot-h3-ai-extraction-fallback-storm"

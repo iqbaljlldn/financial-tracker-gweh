@@ -1,0 +1,16 @@
+{
+  "id": "eval_008_expense_idr_bsi_qris",
+  "name": "BSI QRIS MPM Transaction Receipt (IDR)",
+  "email": {
+    "sender": "nonereply.byondbybsi@bankbsi.co.id",
+    "subject": "Transaksi Pembayaran QRIS MPM Kamu Berhasil",
+    "body": "Transaksi pembayaran QRIS MPM kamu berhasil.\nNominal Transaksi: Rp 15.000,00\nTanggal: 24 Okt 2026\nJam: 10:40:22 WIB\nNama Merchant: Masita (Ricebowl Salad &\nTotal: Rp 15.000,00\nTerminal: *********1309\nRekening Sumber: ******8195"
+  },
+  "expected": {
+    "eventType": "Expense",
+    "amount": 15000.0,
+    "currency": "IDR",
+    "merchantNormalized": "Masita",
+    "paymentMethodLast4": "1309"
+  }
+}

@@ -129,9 +129,7 @@ test-integration:
 ## test-ai-eval: Run AI evaluation-set regression suite (18_testing_strategy.md §8)
 test-ai-eval:
 	@echo "Running AI evaluation regression suite..."
-	@if [ -d "test/fixtures/ai-eval-set" ]; then \
-		echo "AI evaluation fixture directory verified. Evaluation suite passed (stub)."; \
-	fi
+	go test -v ./internal/understanding/application/validator/...
 
 ## test-template-eval: Run parser sample-set validation suite (18_testing_strategy.md §8.4)
 test-template-eval:

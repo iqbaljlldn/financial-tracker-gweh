@@ -35,6 +35,7 @@ const (
 const (
 	TaskClassifyAndRouteMessage = "understanding:classify_and_route"
 	TaskApplySenderTemplate     = "understanding:apply_template"
+	TaskInvokeAIExtractor       = "understanding:invoke_ai"
 	TaskRollupParserMetrics     = "understanding:rollup_parser_metrics"
 )
 

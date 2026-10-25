@@ -1,0 +1,16 @@
+{
+  "id": "eval_001_expense_usd_amazon",
+  "name": "Amazon Order Confirmation (USD)",
+  "email": {
+    "sender": "order-update@amazon.com",
+    "subject": "Your Amazon.com order of 'Wireless Headphones'",
+    "body": "Thank you for shopping with us. Order #111-2223334-4445556\nTotal Before Tax: $41.99\nEstimated Tax: $3.01\nOrder Total: $45.00\nPayment Method: Visa ending in 4821\nDate: 2026-08-03T14:22:00Z"
+  },
+  "expected": {
+    "eventType": "Expense",
+    "amount": 45.00,
+    "currency": "USD",
+    "merchantNormalized": "Amazon",
+    "paymentMethodLast4": "4821"
+  }
+}

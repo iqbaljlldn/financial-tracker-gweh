@@ -124,12 +124,20 @@ func (t *SenderTemplate) Matches(senderEmail string) bool {
 	}
 
 	// Case 3: Domain match suffix (e.g. pattern "@bca.co.id" or "*@bca.co.id")
-	if strings.HasPrefix(pattern, "@") {
-		return strings.HasSuffix(cleanSender, pattern)
-	}
-	if strings.HasPrefix(pattern, "*@") {
-		domainPart := pattern[1:] // "@bca.co.id"
-		return strings.HasSuffix(cleanSender, domainPart)
+	if strings.HasPrefix(pattern, "@") || strings.HasPrefix(pattern, "*@") {
+		domainPart := strings.TrimPrefix(pattern, "*") // e.g. "@bca.co.id"
+		if strings.HasSuffix(cleanSender, domainPart) {
+			return true
+		}
+		// Also support subdomains: e.g. receipts@gotagihan.gojek.com matching *@gojek.com
+		bareDomain := strings.TrimPrefix(domainPart, "@")
+		atIdx := strings.LastIndex(cleanSender, "@")
+		if atIdx != -1 {
+			senderDomain := cleanSender[atIdx+1:]
+			if senderDomain == bareDomain || strings.HasSuffix(senderDomain, "."+bareDomain) {
+				return true
+			}
+		}
 	}
 
 	return false

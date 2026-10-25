@@ -1,0 +1,16 @@
+{
+  "id": "eval_005_transfer_idr_bca",
+  "name": "BCA Mobile Transfer Confirmation (IDR)",
+  "email": {
+    "sender": "notifikasi@klikbca.com",
+    "subject": "Transaksi Transfer Berhasil",
+    "body": "Transfer dana melalui m-BCA telah berhasil dilakukan.\nTanggal: 2026-08-02 14:10:05 WIB\nNomor Rekening Tujuan: 0987654321 - Budi Santoso\nJumlah: Rp 500.000,00\nNomor Referensi: TRF-992211"
+  },
+  "expected": {
+    "eventType": "Transfer",
+    "amount": 500000.0,
+    "currency": "IDR",
+    "merchantNormalized": "BCA",
+    "paymentMethodLast4": ""
+  }
+}

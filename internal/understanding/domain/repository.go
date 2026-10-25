@@ -55,6 +55,24 @@ type OutboxRepository interface {
 	RecordOutboxEvent(ctx context.Context, aggregateType, aggregateID, eventType string, payload any) error
 }
 
+// PromptMetricRecord models an entry in administration.prompt_metrics (08_database_design.md §13.2, 11_ai_blueprint.md §10).
+type PromptMetricRecord struct {
+	ID                      string
+	PromptVersion           string
+	ModelIdentifier         string
+	AggregateConfidence     float64
+	SchemaValidationOutcome string // "valid_first_try" | "valid_after_reprompt" | "invalid"
+	LaterOverridden         bool
+	LatencyMs               int
+	TokenUsage              int
+	RecordedAt              time.Time
+}
+
+// PromptMetricsRepository defines persistence for AI prompt performance tracking.
+type PromptMetricsRepository interface {
+	RecordPromptMetric(ctx context.Context, metric *PromptMetricRecord) error
+}
+
 // RawMessageProvider retrieves the raw email message content for extraction.
 type RawMessageProvider interface {
 	GetRawMessage(ctx context.Context, messageID string) (*RawEmailMessage, error)

@@ -1,0 +1,16 @@
+{
+  "id": "eval_002_expense_idr_gopay",
+  "name": "GoPay Transaction Receipt (IDR)",
+  "email": {
+    "sender": "no-reply@gopay.co.id",
+    "subject": "Bukti Transaksi GoPay #GP-987123",
+    "body": "Transaksi kamu berhasil.\nMerchant: Kopi Kenangan Mall Kelapa Gading\nTotal Pembayaran: Rp 28.500\nMetode Pembayaran: Saldo GoPay\nWaktu Transaksi: 2026-08-04T10:15:00Z"
+  },
+  "expected": {
+    "eventType": "Expense",
+    "amount": 28500.0,
+    "currency": "IDR",
+    "merchantNormalized": "Kopi Kenangan",
+    "paymentMethodLast4": ""
+  }
+}

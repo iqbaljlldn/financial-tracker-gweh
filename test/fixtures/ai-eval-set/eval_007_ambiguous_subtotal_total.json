@@ -1,0 +1,16 @@
+{
+  "id": "eval_007_ambiguous_subtotal_total",
+  "name": "Target Receipt with Multiple Line Items and Total (USD)",
+  "email": {
+    "sender": "orders@target.com",
+    "subject": "Target order #998877 confirmed",
+    "body": "Items in your order:\n1x Household cleaner: $8.99\n1x Paper towels: $14.50\nSubtotal: $23.49\nShipping: $5.00\nSales Tax: $2.11\nGrand Total: $30.60\nPaid with RedCard ending in 5544 on 2026-08-02T19:00:00Z"
+  },
+  "expected": {
+    "eventType": "Expense",
+    "amount": 30.60,
+    "currency": "USD",
+    "merchantNormalized": "Target",
+    "paymentMethodLast4": "5544"
+  }
+}

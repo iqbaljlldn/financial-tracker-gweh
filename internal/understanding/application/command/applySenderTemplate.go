@@ -2,11 +2,13 @@ package command
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/platform/observability"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding/application/executor"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding/domain"
@@ -34,7 +36,15 @@ type ApplySenderTemplateHandler struct {
 	executor       *executor.ExtractionExecutor
 	extractionRepo domain.ExtractionResultRepository
 	outboxRepo     domain.OutboxRepository
+	aiExtractorCmd *InvokeAIExtractorHandler
+	asynqClient    *asynq.Client
 	logger         *slog.Logger
+}
+
+// SetAIExtractor wires the transparent fallback to AI extractor on template failure (13_email_parser.md §7) [GATE].
+func (h *ApplySenderTemplateHandler) SetAIExtractor(aiExtractor *InvokeAIExtractorHandler, asynqClient *asynq.Client) {
+	h.aiExtractorCmd = aiExtractor
+	h.asynqClient = asynqClient
 }
 
 // NewApplySenderTemplateHandler creates a new ApplySenderTemplateHandler.
@@ -86,12 +96,40 @@ func (h *ApplySenderTemplateHandler) Handle(
 			"required_field_missing",
 		).Inc()
 
-		h.logger.Warn("template extraction failed, triggering AI fallback stub",
+		h.logger.Warn("template extraction failed, executing transparent AI fallback",
 			slog.String("templatePattern", tmpl.SenderPattern()),
 			slog.Int("version", tmpl.Version()),
 			slog.Any("missingFields", res.MissingFields),
 			slog.String("messageId", cmd.MessageID),
 		)
+
+		// [GATE - Fallback Wiring]: Transparent hand-off to AI Extractor on template failure (13_email_parser.md §7)
+		if h.asynqClient != nil {
+			aiPayload := InvokeAIExtractorCommand{
+				MessageID:     cmd.MessageID,
+				UserID:        cmd.UserID,
+				RawEmail:      cmd.RawEmail,
+				TriggerReason: "template_failed",
+			}
+			payloadBytes, _ := json.Marshal(aiPayload)
+			task := asynq.NewTask(TaskInvokeAIExtractor, payloadBytes)
+			_, _ = h.asynqClient.Enqueue(task, asynq.Queue(QueueAI))
+		} else if h.aiExtractorCmd != nil {
+			aiRes, err := h.aiExtractorCmd.Handle(ctx, InvokeAIExtractorCommand{
+				MessageID:     cmd.MessageID,
+				UserID:        cmd.UserID,
+				RawEmail:      cmd.RawEmail,
+				TriggerReason: "template_failed",
+			})
+			if err == nil && aiRes != nil && aiRes.Candidate != nil {
+				return &ApplySenderTemplateResult{
+					Outcome:             aiRes.Outcome,
+					ConfidenceAggregate: aiRes.ConfidenceAggregate,
+					Candidate:           aiRes.Candidate,
+					ExtractionResultID:  aiRes.ExtractionResultID,
+				}, nil
+			}
+		}
 
 		return &ApplySenderTemplateResult{
 			Outcome:             string(res.Outcome),

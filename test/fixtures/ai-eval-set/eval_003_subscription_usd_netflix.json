@@ -1,0 +1,16 @@
+{
+  "id": "eval_003_subscription_usd_netflix",
+  "name": "Netflix Subscription Renewal (USD)",
+  "email": {
+    "sender": "info@mailer.netflix.com",
+    "subject": "Your Netflix membership renewal",
+    "body": "Hi John, Your membership has been renewed for next month.\nPlan: Premium Ultra HD\nPrice: $22.99 / month\nCharged to: Mastercard ending in 1122\nBilling Date: 2026-08-05T08:00:00Z"
+  },
+  "expected": {
+    "eventType": "SubscriptionRenewal",
+    "amount": 22.99,
+    "currency": "USD",
+    "merchantNormalized": "Netflix",
+    "paymentMethodLast4": "1122"
+  }
+}

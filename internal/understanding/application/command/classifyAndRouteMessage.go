@@ -41,8 +41,14 @@ type ClassifyAndRouteMessageResult struct {
 type ClassifyAndRouteMessageHandler struct {
 	matcher     *executor.TemplateMatcher
 	applyCmd    *ApplySenderTemplateHandler
+	aiCmd       *InvokeAIExtractorHandler
 	asynqClient *asynq.Client
 	logger      *slog.Logger
+}
+
+// SetAIExtractor configures the AI extractor command handler for direct or queued execution.
+func (h *ClassifyAndRouteMessageHandler) SetAIExtractor(aiCmd *InvokeAIExtractorHandler) {
+	h.aiCmd = aiCmd
 }
 
 // NewClassifyAndRouteMessageHandler creates a new ClassifyAndRouteMessageHandler.
@@ -112,10 +118,20 @@ func (h *ClassifyAndRouteMessageHandler) Handle(
 		slog.String("messageId", cmd.MessageID),
 	)
 
+	aiCmdPayload := InvokeAIExtractorCommand{
+		MessageID:      cmd.MessageID,
+		GmailAccountID: cmd.GmailAccountID,
+		UserID:         cmd.UserID,
+		RawEmail:       cmd.RawEmail,
+		TriggerReason:  "unknown_sender",
+	}
+
 	if h.asynqClient != nil {
-		payloadBytes, _ := json.Marshal(cmd)
+		payloadBytes, _ := json.Marshal(aiCmdPayload)
 		task := asynq.NewTask(TaskInvokeAIExtractor, payloadBytes)
 		_, _ = h.asynqClient.Enqueue(task, asynq.Queue(QueueAI))
+	} else if h.aiCmd != nil {
+		_, _ = h.aiCmd.Handle(ctx, aiCmdPayload)
 	}
 
 	return &ClassifyAndRouteMessageResult{

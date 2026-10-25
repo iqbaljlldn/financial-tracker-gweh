@@ -1,0 +1,16 @@
+{
+  "id": "eval_006_refund_sgd_grab",
+  "name": "Grab Ride Cancellation Refund (SGD)",
+  "email": {
+    "sender": "no-reply@grab.com",
+    "subject": "Your refund for cancelled ride has been processed",
+    "body": "Hi user, Your driver cancelled the booking. We have refunded SGD 14.50 back to your GrabPay balance.\nRefund Reference: RF-881122\nDate: 2026-08-01T04:30:00Z"
+  },
+  "expected": {
+    "eventType": "Refund",
+    "amount": 14.50,
+    "currency": "SGD",
+    "merchantNormalized": "Grab",
+    "paymentMethodLast4": ""
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "eval_004_salary_eur_payroll",
+  "name": "Acme Corp Monthly Salary (EUR)",
+  "email": {
+    "sender": "payroll@acmecorp.de",
+    "subject": "Gehaltsabrechnung / Payslip for July 2026",
+    "body": "Dear Employee, Your net salary for July 2026 has been deposited into your bank account.\nNet Pay: €4,250.00 EUR\nDeposit Date: 2026-07-31T09:00:00Z\nEmployer: Acme Corp Europe GmbH"
+  },
+  "expected": {
+    "eventType": "Salary",
+    "amount": 4250.00,
+    "currency": "EUR",
+    "merchantNormalized": "Acme Corp",
+    "paymentMethodLast4": ""
+  }
+}

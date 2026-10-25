@@ -28,6 +28,14 @@ type Metrics struct {
 	UnderstandingTemplateFailuresTotal     *prometheus.CounterVec
 	UnderstandingTemplateFailureRate       *prometheus.GaugeVec
 	UnderstandingTemplateExecutionDuration *prometheus.HistogramVec
+
+	// Understanding AI Module Metrics (17_observability.md §4.2 & 11_ai_blueprint.md §10)
+	UnderstandingAIExtractionTotal          *prometheus.CounterVec
+	UnderstandingAIConfidenceDistribution   *prometheus.HistogramVec
+	UnderstandingAITokenUsageTotal          *prometheus.CounterVec
+	UnderstandingAIQueueDepth               *prometheus.GaugeVec
+	UnderstandingAIOldestTaskAgeSeconds     *prometheus.GaugeVec
+	UnderstandingAIDailyBudgetConsumedRatio *prometheus.GaugeVec
 }
 
 var defaultMetrics *Metrics
@@ -140,6 +148,55 @@ func InitMetrics() *Metrics {
 			},
 			[]string{"sender_pattern"},
 		),
+
+		UnderstandingAIExtractionTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "understanding_ai_extraction_total",
+				Help: "Total number of AI extractions partitioned by outcome (success, schema_invalid, reprompt_success).",
+			},
+			[]string{"outcome"},
+		),
+
+		UnderstandingAIConfidenceDistribution: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "understanding_ai_confidence_distribution",
+				Help:    "Aggregate confidence score distribution for AI extractions.",
+				Buckets: []float64{0.1, 0.3, 0.5, 0.7, 0.8, 0.85, 0.9, 0.95, 1.0},
+			},
+			[]string{"extraction_method"},
+		),
+
+		UnderstandingAITokenUsageTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "understanding_ai_token_usage_total",
+				Help: "Total tokens consumed by LLM extraction calls partitioned by direction (input, output).",
+			},
+			[]string{"direction"},
+		),
+
+		UnderstandingAIQueueDepth: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "understanding_ai_queue_depth",
+				Help: "Backlog depth of the understanding:ai fallback queue (Hotspot H3 backpressure).",
+			},
+			[]string{"queue_name"},
+		),
+
+		UnderstandingAIOldestTaskAgeSeconds: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "understanding_ai_oldest_task_age_seconds",
+				Help: "Age in seconds of the oldest pending task in the understanding:ai fallback queue.",
+			},
+			[]string{"queue_name"},
+		),
+
+		UnderstandingAIDailyBudgetConsumedRatio: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "understanding_ai_daily_budget_consumed_ratio",
+				Help: "Ratio of daily AI call budget consumed (0.0 - 1.0) partitioned by scope (platform, per_user).",
+			},
+			[]string{"scope"},
+		),
 	}
 
 	reg.MustRegister(
@@ -156,6 +213,12 @@ func InitMetrics() *Metrics {
 		m.UnderstandingTemplateFailuresTotal,
 		m.UnderstandingTemplateFailureRate,
 		m.UnderstandingTemplateExecutionDuration,
+		m.UnderstandingAIExtractionTotal,
+		m.UnderstandingAIConfidenceDistribution,
+		m.UnderstandingAITokenUsageTotal,
+		m.UnderstandingAIQueueDepth,
+		m.UnderstandingAIOldestTaskAgeSeconds,
+		m.UnderstandingAIDailyBudgetConsumedRatio,
 	)
 
 	defaultMetrics = m

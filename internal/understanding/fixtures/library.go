@@ -293,12 +293,166 @@ func GetCuratedTemplates() []*domain.SenderTemplate {
 	}
 	tmplGrab, _ := domain.NewSenderTemplate("tmpl-grab-001", "*@grab.com", 1, grabRules, true, time.Now())
 
+	// 6. Bank Syariah Indonesia (BSI / BYOND by BSI)
+	bsiRules := domain.ExtractionRules{
+		SenderPattern: "*@bankbsi.co.id",
+		Version:       1,
+		Fields: map[string]domain.FieldRule{
+			"amount": {
+				SelectorType:       domain.SelectorRegex,
+				SelectorExpression: `(?i)Total\s*(?:Rp\s*)?([0-9.,]+)`,
+				ExtractionGroup:    1,
+				PostProcessing: []string{
+					domain.PostProcessingTrimWhitespace,
+					domain.PostProcessingParseDecimal,
+				},
+				Required: true,
+			},
+			"occurredAt": {
+				SelectorType:       domain.SelectorRegex,
+				SelectorExpression: `(?i)Tanggal\s*([0-9]{1,2}\s+[a-zA-Z]{3,9}\s+[0-9]{4})`,
+				ExtractionGroup:    1,
+				PostProcessing: []string{
+					domain.PostProcessingTrimWhitespace,
+					domain.PostProcessingParseDate + ":02 Jan 2006",
+				},
+				Required: true,
+			},
+			"merchant": {
+				SelectorType:       domain.SelectorRegex,
+				SelectorExpression: `(?i)(?:Nama Merchant|Pembayaran|Pembelian)\s*([^\n\r<]+)`,
+				ExtractionGroup:    1,
+				PostProcessing: []string{
+					domain.PostProcessingTrimWhitespace,
+					domain.PostProcessingTitleCase,
+				},
+				Required: true,
+			},
+			"paymentMethod": {
+				SelectorType:       domain.SelectorRegex,
+				SelectorExpression: `(?i)(?:Terminal\s*|Rekening Sumber[\s\S]{0,100}?)(\*{4,}\d{4})`,
+				ExtractionGroup:    1,
+				PostProcessing: []string{
+					domain.PostProcessingTrimWhitespace,
+				},
+				Required: false,
+			},
+			"currency": {
+				SelectorType: domain.SelectorStatic,
+				StaticValue:  "IDR",
+				Required:     false,
+			},
+			"eventTypeHint": {
+				SelectorType: domain.SelectorStatic,
+				StaticValue:  domain.EventTypeExpense,
+				Required:     false,
+			},
+		},
+	}
+	tmplBSI, _ := domain.NewSenderTemplate("tmpl-bsi-001", "*@bankbsi.co.id", 1, bsiRules, true, time.Now())
+
+	// 7. Bank Rakyat Indonesia (BRI / BRImo)
+	briRules := domain.ExtractionRules{
+		SenderPattern: "*@bri.co.id",
+		Version:       1,
+		Fields: map[string]domain.FieldRule{
+			"amount": {
+				SelectorType:       domain.SelectorRegex,
+				SelectorExpression: `(?i)Total Transaksi[\s\S]*?(?:Rp\s*)?([0-9.,]+)`,
+				ExtractionGroup:    1,
+				PostProcessing: []string{
+					domain.PostProcessingTrimWhitespace,
+					domain.PostProcessingParseDecimal,
+				},
+				Required: true,
+			},
+			"occurredAt": {
+				SelectorType:       domain.SelectorRegex,
+				SelectorExpression: `([0-9]{1,2}\s+[a-zA-Z]{3,9}\s+[0-9]{4},\s+[0-9]{2}:[0-9]{2}:[0-9]{2})`,
+				ExtractionGroup:    1,
+				PostProcessing: []string{
+					domain.PostProcessingTrimWhitespace,
+					domain.PostProcessingParseDate + ":02 January 2006, 15:04:05",
+				},
+				Required: true,
+			},
+			"merchant": {
+				SelectorType:       domain.SelectorRegex,
+				SelectorExpression: `(?i)Jenis Transaksi\s*([A-Za-z0-9 ]+)`,
+				ExtractionGroup:    1,
+				PostProcessing: []string{
+					domain.PostProcessingTrimWhitespace,
+					domain.PostProcessingTitleCase,
+				},
+				Required: true,
+			},
+			"currency": {
+				SelectorType: domain.SelectorStatic,
+				StaticValue:  "IDR",
+				Required:     false,
+			},
+			"eventTypeHint": {
+				SelectorType: domain.SelectorStatic,
+				StaticValue:  domain.EventTypeExpense,
+				Required:     false,
+			},
+		},
+	}
+	tmplBRI, _ := domain.NewSenderTemplate("tmpl-bri-001", "*@bri.co.id", 1, briRules, true, time.Now())
+
+	// 8. by.U (Telkomsel)
+	byuRules := domain.ExtractionRules{
+		SenderPattern: "*@byu.id",
+		Version:       1,
+		Fields: map[string]domain.FieldRule{
+			"amount": {
+				SelectorType:       domain.SelectorRegex,
+				SelectorExpression: `(?i)Total Pembayaran[\s\S]*?(?:Rp\s*)?([0-9.,]+)`,
+				ExtractionGroup:    1,
+				PostProcessing: []string{
+					domain.PostProcessingTrimWhitespace,
+					domain.PostProcessingParseDecimal,
+				},
+				Required: true,
+			},
+			"occurredAt": {
+				SelectorType:       domain.SelectorRegex,
+				SelectorExpression: `Tanggal Pembayaran\s*([0-9]{1,2}\s+[a-zA-Z]{3,9}\s+[0-9]{4}\s+[0-9]{2}:[0-9]{2}:[0-9]{2})`,
+				ExtractionGroup:    1,
+				PostProcessing: []string{
+					domain.PostProcessingTrimWhitespace,
+					domain.PostProcessingParseDate + ":02 January 2006 15:04:05",
+				},
+				Required: true,
+			},
+			"merchant": {
+				SelectorType: domain.SelectorStatic,
+				StaticValue:  "by.U",
+				Required:     false,
+			},
+			"currency": {
+				SelectorType: domain.SelectorStatic,
+				StaticValue:  "IDR",
+				Required:     false,
+			},
+			"eventTypeHint": {
+				SelectorType: domain.SelectorStatic,
+				StaticValue:  domain.EventTypeExpense,
+				Required:     false,
+			},
+		},
+	}
+	tmplByu, _ := domain.NewSenderTemplate("tmpl-byu-001", "*@byu.id", 1, byuRules, true, time.Now())
+
 	return []*domain.SenderTemplate{
 		tmplBCA,
 		tmplMandiri,
 		tmplGojek,
 		tmplOVO,
 		tmplGrab,
+		tmplBSI,
+		tmplBRI,
+		tmplByu,
 	}
 }
 
@@ -460,6 +614,126 @@ Kartu: Mandiri Visa ...5678
 					Currency:   "IDR",
 					Merchant:   "Grabfood - Bakmie Gm",
 					OccurredAt: "2026-10-25T19:10:00Z",
+				},
+			},
+		},
+	}
+
+	// BSI Samples
+	sets["*@bankbsi.co.id"] = &validator.SampleSet{
+		SenderPattern: "*@bankbsi.co.id",
+		Samples: []validator.SampleEmail{
+			{
+				ID: "bsi-sample-01",
+				RawEmail: domain.RawEmailMessage{
+					MessageID:      "msg-bsi-001",
+					GmailAccountID: "acc-test",
+					Sender:         "nonereply.byondbybsi@bankbsi.co.id",
+					Subject:        "Transaksi Pembayaran QRIS MPM Kamu Berhasil",
+					BodyHTML: `
+						<table class="content">
+							<tr>
+								<td class="content-label">Nominal Transaksi</td>
+								<td class="content-value">Rp 15.000,00</td>
+							</tr>
+							<tr>
+								<td class="content-label">Tanggal</td>
+								<td class="content-value">24 Okt 2026</td>
+							</tr>
+							<tr>
+								<td class="content-label">Jam</td>
+								<td class="content-value">10:40:22 WIB</td>
+							</tr>
+							<tr>
+								<td class="content-label">Nama Merchant</td>
+								<td class="content-value">Masita (Ricebowl Salad &</td>
+							</tr>
+							<tr>
+								<td class="content-label">Total</td>
+								<td class="content-value">Rp 15.000,00</td>
+							</tr>
+							<tr>
+								<td class="content-label-no-border-bottom">Terminal</td>
+								<td class="content-value-no-border-bottom">*********1309</td>
+							</tr>
+						</table>
+					`,
+					ReceivedAt: time.Now(),
+				},
+				Expected: validator.ExpectedExtraction{
+					EventType:  domain.EventTypeExpense,
+					Amount:     15000.0,
+					Currency:   "IDR",
+					Merchant:   "Masita (Ricebowl Salad &",
+					OccurredAt: "2026-10-24T00:00:00Z",
+				},
+			},
+		},
+	}
+
+	// BRI Samples
+	sets["*@bri.co.id"] = &validator.SampleSet{
+		SenderPattern: "*@bri.co.id",
+		Samples: []validator.SampleEmail{
+			{
+				ID: "bri-sample-01",
+				RawEmail: domain.RawEmailMessage{
+					MessageID:      "msg-bri-001",
+					GmailAccountID: "acc-test",
+					Sender:         "BankBRI@bri.co.id",
+					Subject:        "Top Up DANA Berhasil",
+					BodyHTML: `
+						<div>
+							<strong>05 Februari 2026, 13:14:18 WIB</strong>
+							Total Transaksi <br><strong style="font-weight:700;color:#00529c;font-size:18px">Rp20.000</strong>
+							<table>
+								<tr>
+									<td>Jenis Transaksi</td>
+									<td>DANA</td>
+								</tr>
+							</table>
+						</div>
+					`,
+					ReceivedAt: time.Now(),
+				},
+				Expected: validator.ExpectedExtraction{
+					EventType:  domain.EventTypeExpense,
+					Amount:     20000.0,
+					Currency:   "IDR",
+					Merchant:   "DANA",
+					OccurredAt: "2026-02-05T13:14:18Z",
+				},
+			},
+		},
+	}
+
+	// by.U Samples
+	sets["*@byu.id"] = &validator.SampleSet{
+		SenderPattern: "*@byu.id",
+		Samples: []validator.SampleEmail{
+			{
+				ID: "byu-sample-01",
+				RawEmail: domain.RawEmailMessage{
+					MessageID:      "msg-byu-001",
+					GmailAccountID: "acc-test",
+					Sender:         "noreply@byu.id",
+					Subject:        "Yay! Pembayaran berhasil.",
+					BodyHTML: `
+						<div>
+							<p>Tanggal Pembayaran</p>
+							<p>12 February 2026 12:42:34</p>
+							<p>Total Pembayaran Barang/Jasa</p>
+							<p>Rp 28000</p>
+						</div>
+					`,
+					ReceivedAt: time.Now(),
+				},
+				Expected: validator.ExpectedExtraction{
+					EventType:  domain.EventTypeExpense,
+					Amount:     28000.0,
+					Currency:   "IDR",
+					Merchant:   "by.U",
+					OccurredAt: "2026-02-12T12:42:34Z",
 				},
 			},
 		},
