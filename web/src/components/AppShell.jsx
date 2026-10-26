@@ -22,7 +22,6 @@ import SettingsDrawer from './SettingsDrawer';
 import GmailAccountsView from './GmailAccountsView';
 import { ParserMonitoringView } from './ParserMonitoringView';
 import { LedgerView } from './LedgerView';
-import { formatMoney } from '../utils/money';
 
 export default function AppShell() {
   const { user, logout, refreshProfile } = useAuth();
