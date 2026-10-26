@@ -222,6 +222,52 @@ class ApiClient {
       body: JSON.stringify(payload),
     });
   }
+
+  // --- Financial Core Ledger Endpoints (Sprint 6) ---
+  async listFinancialEvents(params = {}) {
+    const query = new URLSearchParams();
+    if (params.limit) query.set('limit', params.limit);
+    if (params.cursor) query.set('cursor', params.cursor);
+    if (params.from) query.set('from', params.from);
+    if (params.to) query.set('to', params.to);
+    if (params.status) query.set('status', params.status);
+    if (params.category) query.set('category', params.category);
+    if (params.merchant) query.set('merchant', params.merchant);
+    const qs = query.toString();
+    return this.request(`/financial-events${qs ? `?${qs}` : ''}`, { method: 'GET' });
+  }
+
+  async getFinancialEvent(id) {
+    return this.request(`/financial-events/${id}`, { method: 'GET' });
+  }
+
+  async createManualEvent(eventData) {
+    return this.request('/financial-events', {
+      method: 'POST',
+      body: JSON.stringify(eventData),
+    });
+  }
+
+  async submitEventOverride(id, fields) {
+    return this.request(`/financial-events/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(fields),
+    });
+  }
+
+  async confirmPendingReviewEvent(id, corrections = null, idempotencyKey = null) {
+    const payload = {};
+    if (corrections) payload.corrections = corrections;
+    if (idempotencyKey) payload.idempotencyKey = idempotencyKey;
+    return this.request(`/financial-events/${id}/confirm`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async listEventOverrides(id) {
+    return this.request(`/financial-events/${id}/overrides`, { method: 'GET' });
+  }
 }
 
 export const apiClient = new ApiClient();

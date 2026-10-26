@@ -21,6 +21,7 @@ import { useAuth } from '../context/AuthContext';
 import SettingsDrawer from './SettingsDrawer';
 import GmailAccountsView from './GmailAccountsView';
 import { ParserMonitoringView } from './ParserMonitoringView';
+import { LedgerView } from './LedgerView';
 import { formatMoney } from '../utils/money';
 
 export default function AppShell() {
@@ -390,39 +391,7 @@ export default function AppShell() {
 
           {activeTab === 'mailboxes' && <GmailAccountsView />}
 
-          {activeTab === 'ledger' && (
-            <div>
-              <div style={{ marginBottom: '24px' }}>
-                <h1 style={{ fontSize: '24px', marginBottom: '6px' }}>Financial Ledger Preview</h1>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-                  Backed by <code>financialcore.financial_events</code> and <code>event_overrides</code>.
-                </p>
-              </div>
-
-              <div className="glass-panel" style={{ padding: '24px', marginBottom: '20px' }}>
-                <h3 style={{ fontSize: '16px', marginBottom: '12px' }}>Decimal-String Precision Demonstration</h3>
-                <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-                  Per 09_api_specification.md §4.2, monetary amounts are transmitted as exact decimal strings (e.g. <code>{`{ value: "45.00", currency: "USD" }`}</code>) and parsed without <code>parseFloat</code> to prevent binary floating point drift:
-                </p>
-
-                <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-                  <div className="glass-card" style={{ padding: '16px', minWidth: '180px' }}>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Formatted Sample (USD)</div>
-                    <div style={{ fontSize: '22px', fontWeight: 700, color: '#34d399', marginTop: '4px' }}>
-                      {formatMoney({ value: '1249.99', currency: 'USD' })}
-                    </div>
-                  </div>
-
-                  <div className="glass-card" style={{ padding: '16px', minWidth: '180px' }}>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Formatted Sample (IDR)</div>
-                    <div style={{ fontSize: '22px', fontWeight: 700, color: '#38bdf8', marginTop: '4px' }}>
-                      {formatMoney({ value: '350000.00', currency: 'IDR' })}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          {activeTab === 'ledger' && <LedgerView />}
 
           {activeTab === 'analytics' && (
             <div>
