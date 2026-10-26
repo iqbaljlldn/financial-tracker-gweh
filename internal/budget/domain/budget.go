@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -23,6 +24,38 @@ var (
 type Money struct {
 	Value    float64 `json:"value"`
 	Currency string  `json:"currency"`
+}
+
+// UnmarshalJSON enables Money to unmarshal from either a numeric value or a decimal string.
+func (m *Money) UnmarshalJSON(data []byte) error {
+	var aux struct {
+		Value    json.RawMessage `json:"value"`
+		Currency string          `json:"currency"`
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	m.Currency = strings.ToUpper(strings.TrimSpace(aux.Currency))
+
+	// Try unmarshaling as float64 first
+	var f float64
+	if err := json.Unmarshal(aux.Value, &f); err == nil {
+		m.Value = f
+		return nil
+	}
+
+	// Try unmarshaling as string then parse float
+	var s string
+	if err := json.Unmarshal(aux.Value, &s); err == nil {
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+		if err != nil {
+			return fmt.Errorf("money: invalid numeric value %q: %w", s, err)
+		}
+		m.Value = parsed
+		return nil
+	}
+
+	return fmt.Errorf("money: could not unmarshal %s into float64 or string", string(aux.Value))
 }
 
 // Budget represents the Budget aggregate root per 04_domain_model.md §9.1 and 08_database_design.md §10.1.

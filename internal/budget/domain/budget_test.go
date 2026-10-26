@@ -1,6 +1,7 @@
 package domain_test
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -241,5 +242,27 @@ func TestSavingsGoal_CalculateProgress(t *testing.T) {
 	// 12,000,000 of 10,000,000 -> 120%
 	if p := goal.CalculateProgress(12000000); p != 120.0 {
 		t.Errorf("expected 120%%, got %v", p)
+	}
+}
+
+func TestMoney_UnmarshalJSON(t *testing.T) {
+	// Case 1: unmarshaling from decimal string (as emitted by financialcore ledger)
+	stringJSON := []byte(`{"value":"15000.00","currency":"IDR"}`)
+	var m1 domain.Money
+	if err := json.Unmarshal(stringJSON, &m1); err != nil {
+		t.Fatalf("failed to unmarshal string money: %v", err)
+	}
+	if m1.Value != 15000.00 || m1.Currency != "IDR" {
+		t.Errorf("expected 15000.00 IDR, got %v %s", m1.Value, m1.Currency)
+	}
+
+	// Case 2: unmarshaling from float number
+	numberJSON := []byte(`{"value":15000.50,"currency":"idr"}`)
+	var m2 domain.Money
+	if err := json.Unmarshal(numberJSON, &m2); err != nil {
+		t.Fatalf("failed to unmarshal number money: %v", err)
+	}
+	if m2.Value != 15000.50 || m2.Currency != "IDR" {
+		t.Errorf("expected 15000.50 IDR, got %v %s", m2.Value, m2.Currency)
 	}
 }

@@ -18,12 +18,12 @@ import (
 // EvaluateBudgetImpactCommand represents the input to evaluate budget impact
 // following a finalized Expense financial event (07_sequence_diagrams.md Diagram 6).
 type EvaluateBudgetImpactCommand struct {
-	UserID     string
-	EventID    string
-	EventType  string
-	Amount     domain.Money
-	Category   string
-	OccurredAt time.Time
+	UserID     string       `json:"userId"`
+	EventID    string       `json:"eventId"`
+	EventType  string       `json:"eventType"`
+	Amount     domain.Money `json:"amount"`
+	Category   string       `json:"category"`
+	OccurredAt time.Time    `json:"occurredAt"`
 }
 
 // EvaluateBudgetImpactResult summarizes the evaluation execution.
