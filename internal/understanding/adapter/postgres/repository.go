@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/iqbaljlldn/financial-tracker-gweh/internal/platform/observability"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding/adapter/postgres/gen"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding/domain"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -236,7 +237,7 @@ func (r *Repository) RecordOutboxEvent(
 		aggUUID = uuid.New()
 	}
 
-	payloadBytes, err := json.Marshal(payload)
+	payloadBytes, err := observability.EmbedTraceContext(ctx, payload)
 	if err != nil {
 		return fmt.Errorf("marshaling outbox payload: %w", err)
 	}

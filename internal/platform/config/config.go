@@ -97,9 +97,10 @@ type UnderstandingConfig struct {
 }
 
 type FinancialCoreConfig struct {
-	BaseCurrency            string  `yaml:"base_currency"`
-	ConfidenceGateThreshold float64 `yaml:"confidence_gate_threshold"`
-	AutoFinalize            bool    `yaml:"auto_finalize"`
+	BaseCurrency            string        `yaml:"base_currency"`
+	ConfidenceGateThreshold float64       `yaml:"confidence_gate_threshold"`
+	AutoFinalize            bool          `yaml:"auto_finalize"`
+	PendingReviewSLA        time.Duration `yaml:"pending_review_sla"` // default 7 days (SRS §4.4)
 }
 
 type BudgetConfig struct {

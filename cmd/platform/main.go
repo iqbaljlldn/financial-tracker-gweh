@@ -17,6 +17,9 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/iqbaljlldn/financial-tracker-gweh/internal/financialcore"
+	fcCmd "github.com/iqbaljlldn/financial-tracker-gweh/internal/financialcore/application/command"
+	fcDomain "github.com/iqbaljlldn/financial-tracker-gweh/internal/financialcore/domain"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/identity"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/ingestion"
 	ingestionCmd "github.com/iqbaljlldn/financial-tracker-gweh/internal/ingestion/application/command"
@@ -26,6 +29,7 @@ import (
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/platform/security"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/platform/taskserver"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding"
+	"github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding/application/categorization"
 	understandingCmd "github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding/application/command"
 )
 
@@ -150,6 +154,39 @@ func initSecrets(cfg *config.Config) ([]byte, []byte) {
 	return jwtSecret, csrfSecret
 }
 
+type categorySuggesterBridge struct {
+	engine *categorization.Engine
+}
+
+func (b *categorySuggesterBridge) Suggest(ctx context.Context, userID, normalizedMerchant string) (fcDomain.CategorySuggestion, bool) {
+	if b.engine == nil {
+		return fcDomain.CategorySuggestion{}, false
+	}
+	assign := b.engine.AssignCategory(ctx, categorization.Request{
+		UserID:             userID,
+		NormalizedMerchant: normalizedMerchant,
+	})
+	if assign.Source == categorization.SourceDefault || assign.Category == categorization.CategoryUncategorized {
+		return fcDomain.CategorySuggestion{}, false
+	}
+	return fcDomain.CategorySuggestion{
+		Category:   assign.Category,
+		Confidence: assign.Confidence,
+		Source:     assign.Source,
+	}, true
+}
+
+type categoryFeedbackBridge struct {
+	engine *categorization.Engine
+}
+
+func (b *categoryFeedbackBridge) RecordUserCorrection(ctx context.Context, userID, normalizedMerchant, category string) error {
+	if b.engine == nil {
+		return nil
+	}
+	return b.engine.RecordUserCorrection(ctx, userID, normalizedMerchant, category)
+}
+
 func runAPI(ctx context.Context, logger *slog.Logger) {
 	cfg := loadAppConfig(logger)
 	dbPool, err := pgxpool.New(ctx, resolveDatabaseURL(cfg))
@@ -240,12 +277,25 @@ func runAPI(ctx context.Context, logger *slog.Logger) {
 		logger.Error("failed to initialize understanding module", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
-	_ = understandingMod.SeedCuratedTemplates(ctx)
+	financialcoreMod, err := financialcore.NewModule(financialcore.Config{
+		DB:                  dbPool,
+		SessionManager:      sessionManager,
+		ConfidenceThreshold: cfg.FinancialCore.ConfidenceGateThreshold,
+		PendingReviewSLA:    cfg.FinancialCore.PendingReviewSLA,
+		CategorySuggester:   &categorySuggesterBridge{engine: understandingMod.Categorizer},
+		CategoryFeedback:    &categoryFeedbackBridge{engine: understandingMod.Categorizer},
+		Logger:              logger,
+	})
+	if err != nil {
+		logger.Error("failed to initialize financialcore module", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
 
-	// Mount Identity, Ingestion, and Understanding routes
+	// Mount Identity, Ingestion, Understanding, and FinancialCore routes
 	identityMod.RegisterHTTPRoutes(server.Router())
 	ingestionMod.RegisterHTTPRoutes(server.Router())
 	understandingMod.RegisterHTTPRoutes(server.Router())
+	financialcoreMod.RegisterHTTPRoutes(server.Router())
 
 	serverErr := make(chan error, 1)
 	go func() {
@@ -344,6 +394,20 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 	}
 	_ = understandingMod.SeedCuratedTemplates(ctx)
 
+	financialcoreMod, err := financialcore.NewModule(financialcore.Config{
+		DB:                  dbPool,
+		SessionManager:      sessionManager,
+		ConfidenceThreshold: cfg.FinancialCore.ConfidenceGateThreshold,
+		PendingReviewSLA:    cfg.FinancialCore.PendingReviewSLA,
+		CategorySuggester:   &categorySuggesterBridge{engine: understandingMod.Categorizer},
+		CategoryFeedback:    &categoryFeedbackBridge{engine: understandingMod.Categorizer},
+		Logger:              logger,
+	})
+	if err != nil {
+		logger.Error("failed to initialize financialcore module in worker", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
 	// Start Ingestion Outbox Relay
 	if err := ingestionMod.StartOutboxRelay(ctx); err != nil {
 		logger.Error("failed to start ingestion outbox relay", slog.String("error", err.Error()))
@@ -366,7 +430,7 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 	}
 
 	mux := asynq.NewServeMux()
-	registerWorkerTaskHandlers(mux, ingestionMod, understandingMod, logger)
+	registerWorkerTaskHandlers(mux, ingestionMod, understandingMod, financialcoreMod, logger)
 
 	// Periodic watch renewal and parser metrics background loop
 	go func() {
@@ -382,6 +446,9 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 				})
 				_, _ = understandingMod.RollupMetricsCmd.Handle(ctx, understandingCmd.RollupParserMetricsCommand{
 					Trigger: "scheduled",
+				})
+				_ = financialcoreMod.CheckSLACmd.Handle(ctx, fcCmd.CheckPendingReviewSLACommand{
+					Now: time.Now(),
 				})
 			}
 		}
@@ -403,6 +470,7 @@ func registerWorkerTaskHandlers(
 	mux *asynq.ServeMux,
 	ingestionMod *ingestion.Module,
 	understandingMod *understanding.Module,
+	financialcoreMod *financialcore.Module,
 	logger *slog.Logger,
 ) {
 	mux.HandleFunc(taskserver.TaskStartInitialFullSync, func(ctx context.Context, t *asynq.Task) error {
@@ -465,4 +533,5 @@ func registerWorkerTaskHandlers(
 	})
 
 	understandingMod.RegisterWorkerTasks(mux)
+	financialcoreMod.RegisterWorkerTasks(mux)
 }

@@ -75,3 +75,18 @@ groups:
           summary: "AI extraction fallback queue backpressure detected (H3 resolution)"
           description: "Queue understanding:ai depth is {{ $value }} or oldest pending task exceeds 5m threshold. Correlate with parser failure rate spike."
           runbook_url: "docs/06_architecture.md#65-resolving-hotspot-h3-ai-extraction-fallback-storm"
+
+  - name: financialcore_alerts
+    rules:
+      # Pending-review SLA breach (7-day default) per 17_observability.md §8 & sprint checklist
+      - alert: FinancialCorePendingReviewSLABreach
+        expr: increase(financialcore_pending_review_sla_breach_total[1h]) > 0
+        for: 1m
+        labels:
+          severity: medium
+          module: financialcore
+        annotations:
+          summary: "FinancialCore pending-review SLA breach detected"
+          description: "One or more transactions have remained in pending_review status beyond the SLA window (7-day default) without user confirmation."
+          runbook_url: "docs/17_observability.md#8-alerting-rules--severity"
+

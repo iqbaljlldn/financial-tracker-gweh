@@ -39,6 +39,12 @@ const (
 	TaskRollupParserMetrics     = "understanding:rollup_parser_metrics"
 )
 
+// Task names for Financial Core module.
+const (
+	TaskEvaluateConfidenceGate = "financialcore:evaluate_confidence_gate"
+	TaskArchiveFinancialEvents = "financialcore:archive_financial_events"
+)
+
 // DefaultQueueWeights provides standard priority weighting per 06_architecture.md §6.3.
 var DefaultQueueWeights = map[string]int{
 	QueueIngestionCritical:     6,

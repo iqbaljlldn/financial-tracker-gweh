@@ -36,6 +36,13 @@ type Metrics struct {
 	UnderstandingAIQueueDepth               *prometheus.GaugeVec
 	UnderstandingAIOldestTaskAgeSeconds     *prometheus.GaugeVec
 	UnderstandingAIDailyBudgetConsumedRatio *prometheus.GaugeVec
+
+	// Financial Core Module Metrics (§4.3)
+	FinancialCoreEventsFinalizedTotal        *prometheus.CounterVec
+	FinancialCoreEventsPendingReview         prometheus.Gauge
+	FinancialCorePendingReviewSLABreachTotal prometheus.Counter
+	FinancialCoreOverridesSubmittedTotal     *prometheus.CounterVec
+	FinancialCoreDedupConflictTotal          prometheus.Counter
 }
 
 var defaultMetrics *Metrics
@@ -197,6 +204,43 @@ func InitMetrics() *Metrics {
 			},
 			[]string{"scope"},
 		),
+
+		FinancialCoreEventsFinalizedTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "financialcore_events_finalized_total",
+				Help: "Total FinancialEvents finalized, partitioned by event_type and confidence_method.",
+			},
+			[]string{"event_type", "confidence_method"},
+		),
+
+		FinancialCoreEventsPendingReview: prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Name: "financialcore_events_pending_review_total",
+				Help: "Current number of FinancialEvents awaiting user review.",
+			},
+		),
+
+		FinancialCorePendingReviewSLABreachTotal: prometheus.NewCounter(
+			prometheus.CounterOpts{
+				Name: "financialcore_pending_review_sla_breach_total",
+				Help: "Total pending-review events that crossed the review SLA (7-day default) without confirmation.",
+			},
+		),
+
+		FinancialCoreOverridesSubmittedTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "financialcore_overrides_submitted_total",
+				Help: "Total manual EventOverrides submitted, partitioned by corrected field_name.",
+			},
+			[]string{"field_name"},
+		),
+
+		FinancialCoreDedupConflictTotal: prometheus.NewCounter(
+			prometheus.CounterOpts{
+				Name: "financialcore_dedup_conflict_total",
+				Help: "ON CONFLICT DO NOTHING hits on the INV-3 uniqueness constraint (successful idempotent redeliveries).",
+			},
+		),
 	}
 
 	reg.MustRegister(
@@ -219,6 +263,11 @@ func InitMetrics() *Metrics {
 		m.UnderstandingAIQueueDepth,
 		m.UnderstandingAIOldestTaskAgeSeconds,
 		m.UnderstandingAIDailyBudgetConsumedRatio,
+		m.FinancialCoreEventsFinalizedTotal,
+		m.FinancialCoreEventsPendingReview,
+		m.FinancialCorePendingReviewSLABreachTotal,
+		m.FinancialCoreOverridesSubmittedTotal,
+		m.FinancialCoreDedupConflictTotal,
 	)
 
 	defaultMetrics = m
