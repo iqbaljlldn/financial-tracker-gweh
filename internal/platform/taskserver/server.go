@@ -45,6 +45,11 @@ const (
 	TaskArchiveFinancialEvents = "financialcore:archive_financial_events"
 )
 
+// Task names for Budget module.
+const (
+	TaskEvaluateBudgetImpact = "budget:evaluate_impact"
+)
+
 // DefaultQueueWeights provides standard priority weighting per 06_architecture.md §6.3.
 var DefaultQueueWeights = map[string]int{
 	QueueIngestionCritical:     6,

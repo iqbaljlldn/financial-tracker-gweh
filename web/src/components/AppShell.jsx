@@ -16,12 +16,14 @@ import {
   ExternalLink,
   RefreshCw,
   Cpu,
+  Wallet,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import SettingsDrawer from './SettingsDrawer';
 import GmailAccountsView from './GmailAccountsView';
 import { ParserMonitoringView } from './ParserMonitoringView';
 import { LedgerView } from './LedgerView';
+import { BudgetView } from './BudgetView';
 
 export default function AppShell() {
   const { user, logout, refreshProfile } = useAuth();
@@ -232,6 +234,27 @@ export default function AppShell() {
           </button>
 
           <button
+            onClick={() => setActiveTab('budgets')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              padding: '10px 14px',
+              borderRadius: 'var(--radius-sm)',
+              border: 'none',
+              background: activeTab === 'budgets' ? 'rgba(16, 185, 129, 0.15)' : 'transparent',
+              color: activeTab === 'budgets' ? '#34d399' : 'var(--text-secondary)',
+              fontWeight: activeTab === 'budgets' ? 600 : 500,
+              fontSize: '14px',
+              cursor: 'pointer',
+              textAlign: 'left',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <Wallet size={16} /> Budgets & Goals
+          </button>
+
+          <button
             onClick={() => setActiveTab('analytics')}
             style={{
               display: 'flex',
@@ -391,6 +414,8 @@ export default function AppShell() {
           {activeTab === 'mailboxes' && <GmailAccountsView />}
 
           {activeTab === 'ledger' && <LedgerView />}
+
+          {activeTab === 'budgets' && <BudgetView />}
 
           {activeTab === 'analytics' && (
             <div>

@@ -18,6 +18,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/iqbaljlldn/financial-tracker-gweh/internal/budget"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/financialcore"
 	fcCmd "github.com/iqbaljlldn/financial-tracker-gweh/internal/financialcore/application/command"
 	fcDomain "github.com/iqbaljlldn/financial-tracker-gweh/internal/financialcore/domain"
@@ -294,11 +295,22 @@ func runAPI(ctx context.Context, logger *slog.Logger) {
 		os.Exit(1)
 	}
 
-	// Mount Identity, Ingestion, Understanding, and FinancialCore routes
+	budgetMod, err := budget.NewModule(budget.Config{
+		DB:             dbPool,
+		SessionManager: sessionManager,
+		Logger:         logger,
+	})
+	if err != nil {
+		logger.Error("failed to initialize budget module", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
+	// Mount Identity, Ingestion, Understanding, FinancialCore, and Budget routes
 	identityMod.RegisterHTTPRoutes(server.Router())
 	ingestionMod.RegisterHTTPRoutes(server.Router())
 	understandingMod.RegisterHTTPRoutes(server.Router())
 	financialcoreMod.RegisterHTTPRoutes(server.Router())
+	budgetMod.RegisterHTTPRoutes(server.Router())
 
 	serverErr := make(chan error, 1)
 	go func() {
@@ -399,6 +411,7 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 
 	financialcoreMod, err := financialcore.NewModule(financialcore.Config{
 		DB:                  dbPool,
+		AsynqClient:         asynqClient,
 		SessionManager:      sessionManager,
 		ConfidenceThreshold: cfg.FinancialCore.ConfidenceGateThreshold,
 		PendingReviewSLA:    cfg.FinancialCore.PendingReviewSLA,
@@ -408,6 +421,16 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 	})
 	if err != nil {
 		logger.Error("failed to initialize financialcore module in worker", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
+	budgetMod, err := budget.NewModule(budget.Config{
+		DB:             dbPool,
+		SessionManager: sessionManager,
+		Logger:         logger,
+	})
+	if err != nil {
+		logger.Error("failed to initialize budget module in worker", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
 
@@ -422,6 +445,18 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 		logger.Error("failed to start understanding outbox relay", slog.String("error", err.Error()))
 	}
 	defer understandingMod.StopOutboxRelay()
+
+	// Start FinancialCore Outbox Relay
+	if err := financialcoreMod.StartOutboxRelay(ctx); err != nil {
+		logger.Error("failed to start financialcore outbox relay", slog.String("error", err.Error()))
+	}
+	defer financialcoreMod.StopOutboxRelay()
+
+	// Start Budget Outbox Relay
+	if err := budgetMod.StartOutboxRelay(ctx); err != nil {
+		logger.Error("failed to start budget outbox relay", slog.String("error", err.Error()))
+	}
+	defer budgetMod.StopOutboxRelay()
 
 	// Start Poll-Fallback Safety Net Scheduler [GATE - H2 Resolution]
 	ingestionMod.PollFallbackScheduler.Start(ctx)
@@ -439,7 +474,7 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 	}
 
 	mux := asynq.NewServeMux()
-	registerWorkerTaskHandlers(mux, ingestionMod, understandingMod, financialcoreMod, logger)
+	registerWorkerTaskHandlers(mux, ingestionMod, understandingMod, financialcoreMod, budgetMod, logger)
 
 	// Periodic watch renewal and parser metrics background loop
 	go func() {
@@ -480,6 +515,7 @@ func registerWorkerTaskHandlers(
 	ingestionMod *ingestion.Module,
 	understandingMod *understanding.Module,
 	financialcoreMod *financialcore.Module,
+	budgetMod *budget.Module,
 	logger *slog.Logger,
 ) {
 	mux.HandleFunc(taskserver.TaskStartInitialFullSync, func(ctx context.Context, t *asynq.Task) error {
@@ -613,4 +649,5 @@ func registerWorkerTaskHandlers(
 
 	understandingMod.RegisterWorkerTasks(mux)
 	financialcoreMod.RegisterWorkerTasks(mux)
+	budgetMod.RegisterWorkerTasks(mux)
 }

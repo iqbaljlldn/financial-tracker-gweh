@@ -268,6 +268,52 @@ class ApiClient {
   async listEventOverrides(id) {
     return this.request(`/financial-events/${id}/overrides`, { method: 'GET' });
   }
+
+  // --- Budgets ---
+  async listBudgets(includeInactive = false) {
+    return this.request(`/budgets${includeInactive ? '?includeInactive=true' : ''}`, { method: 'GET' });
+  }
+
+  async createBudget(data) {
+    return this.request('/budgets', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateBudget(id, data) {
+    return this.request(`/budgets/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteBudget(id) {
+    return this.request(`/budgets/${id}`, { method: 'DELETE' });
+  }
+
+  // --- Savings Goals ---
+  async listSavingsGoals() {
+    return this.request('/savings-goals', { method: 'GET' });
+  }
+
+  async createSavingsGoal(data) {
+    return this.request('/savings-goals', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateSavingsGoal(id, data) {
+    return this.request(`/savings-goals/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteSavingsGoal(id) {
+    return this.request(`/savings-goals/${id}`, { method: 'DELETE' });
+  }
 }
 
 export const apiClient = new ApiClient();

@@ -43,6 +43,10 @@ type Metrics struct {
 	FinancialCorePendingReviewSLABreachTotal prometheus.Counter
 	FinancialCoreOverridesSubmittedTotal     *prometheus.CounterVec
 	FinancialCoreDedupConflictTotal          prometheus.Counter
+
+	// Budget Module Metrics (§4.4)
+	BudgetThresholdCrossedTotal     *prometheus.CounterVec
+	BudgetEvaluationDurationSeconds prometheus.Histogram
 }
 
 var defaultMetrics *Metrics
@@ -241,6 +245,22 @@ func InitMetrics() *Metrics {
 				Help: "ON CONFLICT DO NOTHING hits on the INV-3 uniqueness constraint (successful idempotent redeliveries).",
 			},
 		),
+
+		BudgetThresholdCrossedTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "budget_threshold_crossed_total",
+				Help: "Total number of budget threshold crossings fired per threshold.",
+			},
+			[]string{"threshold"},
+		),
+
+		BudgetEvaluationDurationSeconds: prometheus.NewHistogram(
+			prometheus.HistogramOpts{
+				Name:    "budget_evaluation_duration_seconds",
+				Help:    "Duration in seconds to evaluate budget impacts upon finalized expense events.",
+				Buckets: prometheus.DefBuckets,
+			},
+		),
 	}
 
 	reg.MustRegister(
@@ -268,6 +288,8 @@ func InitMetrics() *Metrics {
 		m.FinancialCorePendingReviewSLABreachTotal,
 		m.FinancialCoreOverridesSubmittedTotal,
 		m.FinancialCoreDedupConflictTotal,
+		m.BudgetThresholdCrossedTotal,
+		m.BudgetEvaluationDurationSeconds,
 	)
 
 	defaultMetrics = m

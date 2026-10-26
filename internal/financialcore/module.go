@@ -6,14 +6,18 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	fcHttp "github.com/iqbaljlldn/financial-tracker-gweh/internal/financialcore/adapter/http"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/financialcore/adapter/postgres"
+	"github.com/iqbaljlldn/financial-tracker-gweh/internal/financialcore/adapter/postgres/gen"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/financialcore/application/command"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/financialcore/application/query"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/financialcore/domain"
@@ -24,6 +28,7 @@ import (
 // Config configures the financialcore module.
 type Config struct {
 	DB                  *pgxpool.Pool
+	AsynqClient         *asynq.Client
 	SessionManager      *security.SessionTokenManager
 	ConfidenceThreshold float64
 	PendingReviewSLA    time.Duration
@@ -45,6 +50,11 @@ type Module struct {
 	ListOverridesQuery *query.ListEventOverridesHandler
 	HTTPHandler        *fcHttp.Handler
 	logger             *slog.Logger
+	dbPool             *pgxpool.Pool
+	asynqClient        *asynq.Client
+
+	outboxRelayCancel context.CancelFunc
+	outboxRelayWg     sync.WaitGroup
 }
 
 // NewModule constructs the financialcore module with its postgres adapters and application services.
@@ -95,6 +105,8 @@ func NewModule(cfg Config) (*Module, error) {
 		ListOverridesQuery: listOverridesQuery,
 		HTTPHandler:        httpHandler,
 		logger:             cfg.Logger,
+		dbPool:             cfg.DB,
+		asynqClient:        cfg.AsynqClient,
 	}, nil
 }
 
@@ -135,4 +147,68 @@ func (m *Module) handleArchiveEventsTask(ctx context.Context, task *asynq.Task) 
 	}
 	_, err := m.ArchiveCmd.Handle(ctx, cmd)
 	return err
+}
+
+// StartOutboxRelay starts background poller for unrelayed financialcore outbox events.
+func (m *Module) StartOutboxRelay(ctx context.Context) error {
+	relayCtx, cancel := context.WithCancel(ctx)
+	m.outboxRelayCancel = cancel
+	m.outboxRelayWg.Add(1)
+
+	go func() {
+		defer m.outboxRelayWg.Done()
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-relayCtx.Done():
+				return
+			case <-ticker.C:
+				m.pollOutbox(relayCtx)
+			}
+		}
+	}()
+
+	return nil
+}
+
+// StopOutboxRelay stops the outbox relay background poller.
+func (m *Module) StopOutboxRelay() {
+	if m.outboxRelayCancel != nil {
+		m.outboxRelayCancel()
+		m.outboxRelayWg.Wait()
+	}
+}
+
+func (m *Module) pollOutbox(ctx context.Context) {
+	queries := gen.New(m.dbPool)
+	rows, err := queries.ListUnrelayedFinancialCoreOutbox(ctx, 50)
+	if err != nil || len(rows) == 0 {
+		return
+	}
+
+	ids := make([]pgtype.UUID, 0, len(rows))
+	for _, row := range rows {
+		if row.EventType == domain.EventFinancialEventFinalized {
+			var payload domain.FinancialEventFinalizedPayload
+			if err := json.Unmarshal(row.Payload, &payload); err == nil {
+				if strings.EqualFold(payload.EventType, "Expense") && m.asynqClient != nil {
+					evalPayload, _ := json.Marshal(map[string]any{
+						"userId":     payload.UserID,
+						"eventId":    payload.EventID,
+						"eventType":  payload.EventType,
+						"amount":     payload.Amount,
+						"category":   payload.Category,
+						"occurredAt": payload.OccurredAt,
+					})
+					task := asynq.NewTask(taskserver.TaskEvaluateBudgetImpact, evalPayload)
+					_, _ = m.asynqClient.Enqueue(task, asynq.Queue(taskserver.QueueBudgetEvaluate))
+				}
+			}
+		}
+		ids = append(ids, row.ID)
+	}
+
+	_ = queries.MarkFinancialCoreOutboxRelayed(ctx, ids)
 }
