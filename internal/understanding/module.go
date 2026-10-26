@@ -12,6 +12,7 @@ import (
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/platform/security"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding/adapter/external"
 	understandinghttp "github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding/adapter/http"
+	"github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding/adapter/outbox"
 	understandingpg "github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding/adapter/postgres"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding/application/categorization"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding/application/command"
@@ -59,6 +60,7 @@ type Module struct {
 	InvokeAICmd         *command.InvokeAIExtractorHandler
 	PublishTemplateCmd  *command.PublishTemplateHandler
 	RollupMetricsCmd    *command.RollupParserMetricsHandler
+	OutboxRelay         *outbox.UnderstandingOutboxRelay
 	httpHandler         *understandinghttp.Handler
 	logger              *slog.Logger
 }
@@ -128,6 +130,11 @@ func NewModule(cfg Config) (*Module, error) {
 		cfg.SessionManager,
 	)
 
+	var relay *outbox.UnderstandingOutboxRelay
+	if cfg.AsynqClient != nil {
+		relay = outbox.NewUnderstandingOutboxRelay(cfg.DB, cfg.AsynqClient, 500*time.Millisecond, cfg.Logger)
+	}
+
 	m := &Module{
 		Repo:                repo,
 		Matcher:             matcher,
@@ -141,11 +148,35 @@ func NewModule(cfg Config) (*Module, error) {
 		InvokeAICmd:         invokeAICmd,
 		PublishTemplateCmd:  publishCmd,
 		RollupMetricsCmd:    metricsCmd,
+		OutboxRelay:         relay,
 		httpHandler:         httpHandler,
 		logger:              cfg.Logger,
 	}
 
 	return m, nil
+}
+
+// StartOutboxRelay starts background poller for unrelayed understanding outbox events.
+func (m *Module) StartOutboxRelay(ctx context.Context) error {
+	if m.OutboxRelay == nil {
+		return nil
+	}
+	return m.OutboxRelay.Start(ctx)
+}
+
+// StopOutboxRelay stops the background poller.
+func (m *Module) StopOutboxRelay() {
+	if m.OutboxRelay != nil {
+		m.OutboxRelay.Stop()
+	}
+}
+
+// PollOutboxOnce synchronously polls and relays outbox events (useful for tests).
+func (m *Module) PollOutboxOnce(ctx context.Context) (int, error) {
+	if m.OutboxRelay == nil {
+		return 0, nil
+	}
+	return m.OutboxRelay.PollOnce(ctx)
 }
 
 // RegisterHTTPRoutes mounts understanding admin endpoints.

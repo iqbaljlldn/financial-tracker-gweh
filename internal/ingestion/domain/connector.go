@@ -74,4 +74,7 @@ type Connector interface {
 
 	// Disconnect terminates the connection and deregisters any active watches.
 	Disconnect(ctx context.Context, account *ConnectorAccount) error
+
+	// FetchMessage fetches full details for a single external message by ID.
+	FetchMessage(ctx context.Context, account *ConnectorAccount, messageID string) (*RawMessage, error)
 }

@@ -106,20 +106,22 @@ func (h *ApplySenderTemplateHandler) Handle(
 		// [GATE - Fallback Wiring]: Transparent hand-off to AI Extractor on template failure (13_email_parser.md §7)
 		if h.asynqClient != nil {
 			aiPayload := InvokeAIExtractorCommand{
-				MessageID:     cmd.MessageID,
-				UserID:        cmd.UserID,
-				RawEmail:      cmd.RawEmail,
-				TriggerReason: "template_failed",
+				MessageID:      cmd.MessageID,
+				GmailAccountID: cmd.RawEmail.GmailAccountID,
+				UserID:         cmd.UserID,
+				RawEmail:       cmd.RawEmail,
+				TriggerReason:  "template_failed",
 			}
 			payloadBytes, _ := json.Marshal(aiPayload)
 			task := asynq.NewTask(TaskInvokeAIExtractor, payloadBytes)
 			_, _ = h.asynqClient.Enqueue(task, asynq.Queue(QueueAI))
 		} else if h.aiExtractorCmd != nil {
 			aiRes, err := h.aiExtractorCmd.Handle(ctx, InvokeAIExtractorCommand{
-				MessageID:     cmd.MessageID,
-				UserID:        cmd.UserID,
-				RawEmail:      cmd.RawEmail,
-				TriggerReason: "template_failed",
+				MessageID:      cmd.MessageID,
+				GmailAccountID: cmd.RawEmail.GmailAccountID,
+				UserID:         cmd.UserID,
+				RawEmail:       cmd.RawEmail,
+				TriggerReason:  "template_failed",
 			})
 			if err == nil && aiRes != nil && aiRes.Candidate != nil {
 				return &ApplySenderTemplateResult{

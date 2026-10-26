@@ -74,7 +74,11 @@ func TestSprint5_Diagram4_UnknownSenderAIExtraction_LowConfidenceReviewPath(t *t
 	}
 
 	userID := uuid.New().String()
+	cleaner := NewTestCleaner(t, pool)
+	cleaner.TrackUser(userID)
+
 	msgID := uuid.New().String()
+	cleaner.TrackMessage(msgID)
 	accID := uuid.New().String()
 
 	// Ingested email from unknown sender (receipts@unregistered-store.com)
@@ -118,6 +122,7 @@ func TestSprint5_Diagram4_UnknownSenderAIExtraction_LowConfidenceReviewPath(t *t
 	if aiRes.Outcome != understandingCmd.OutcomeSuccess {
 		t.Errorf("expected outcome 'success', got %s", aiRes.Outcome)
 	}
+	cleaner.TrackExtractionResult(aiRes.ExtractionResultID)
 	if aiRes.Candidate == nil {
 		t.Fatal("expected candidate to be non-nil")
 	}
@@ -181,6 +186,7 @@ func TestSprint5_Diagram4_UnknownSenderAIExtraction_LowConfidenceReviewPath(t *t
 	if outboxEvent != domain.EventFinancialEventCandidateCreated {
 		t.Errorf("expected EventFinancialEventCandidateCreated outbox event, got %s", outboxEvent)
 	}
+	_, _ = pool.Exec(ctx, "DELETE FROM understanding.outbox_events WHERE aggregate_id = $1::uuid", aiRes.ExtractionResultID)
 }
 
 // TestSprint5_TransparentFallbackFromBrokenTemplate verifies:
@@ -216,6 +222,9 @@ func TestSprint5_TransparentFallbackFromBrokenTemplate(t *testing.T) {
 
 	// 1. Publish a template that expects CSS selector `.non-existent-selector`
 	brokenPattern := fmt.Sprintf("*@broken-%s.com", uuid.New().String()[:8])
+	cleaner := NewTestCleaner(t, pool)
+	cleaner.TrackTemplatePattern(brokenPattern)
+
 	brokenRules := domain.ExtractionRules{
 		SenderPattern: brokenPattern,
 		Version:       1,
@@ -234,7 +243,9 @@ func TestSprint5_TransparentFallbackFromBrokenTemplate(t *testing.T) {
 	_ = mod.Repo.PublishAtomic(ctx, brokenTmpl)
 
 	userID := uuid.New().String()
+	cleaner.TrackUser(userID)
 	msgID := uuid.New().String()
+	cleaner.TrackMessage(msgID)
 
 	// Email matches sender pattern, but HTML does NOT contain the selector
 	brokenEmail := domain.RawEmailMessage{
@@ -255,6 +266,7 @@ func TestSprint5_TransparentFallbackFromBrokenTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected transparent AI fallback to succeed, got error: %v", err)
 	}
+	cleaner.TrackExtractionResult(res.ExtractionResultID)
 
 	if res.Candidate == nil {
 		t.Fatal("expected non-nil Candidate from transparent fallback")
@@ -271,6 +283,7 @@ func TestSprint5_TransparentFallbackFromBrokenTemplate(t *testing.T) {
 	if err := cand.Validate(); err != nil {
 		t.Errorf("candidate from AI fallback failed invariant validation: %v", err)
 	}
+	_, _ = pool.Exec(ctx, "DELETE FROM understanding.outbox_events WHERE aggregate_id = $1::uuid", res.ExtractionResultID)
 }
 
 // TestSprint5_RegressionGateInCI verifies the evaluation-set regression gate (18_testing_strategy.md §8) [GATE].

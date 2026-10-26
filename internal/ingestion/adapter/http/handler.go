@@ -191,6 +191,35 @@ func (h *Handler) TriggerSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	acc, err := h.accountRepo.FindByID(r.Context(), accountID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "Gmail account not found", "")
+		return
+	}
+	if acc.UserID() != userID {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "Account does not belong to user", "")
+		return
+	}
+
+	if h.asynqClient != nil {
+		taskPayload, _ := json.Marshal(map[string]any{
+			"accountId":  accountID,
+			"windowDays": acc.InitialSyncWindowDays(),
+		})
+		task := asynq.NewTask(taskserver.TaskStartInitialFullSync, taskPayload)
+		if _, err := h.asynqClient.EnqueueContext(r.Context(), task, asynq.Queue(taskserver.QueueIngestionBulk), asynq.MaxRetry(3)); err != nil {
+			writeError(w, http.StatusInternalServerError, "QUEUE_ERROR", err.Error(), "")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]any{
+			"accountId": accountID,
+			"status":    string(acc.Status()),
+			"enqueued":  true,
+		})
+		return
+	}
+
 	res, err := h.syncCmd.Handle(r.Context(), command.StartInitialFullSyncCommand{
 		AccountID: accountID,
 	})

@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -22,14 +21,6 @@ import (
 	identityhttp "github.com/iqbaljlldn/financial-tracker-gweh/internal/identity/adapter/http"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/platform/security"
 )
-
-func getDatabaseURL() string {
-	url := os.Getenv("DATABASE_URL")
-	if url == "" {
-		url = "postgres://postgres:postgres@localhost:5433/financial_tracker?sslmode=disable"
-	}
-	return url
-}
 
 func randomBytes(n int) []byte {
 	b := make([]byte, n)
@@ -155,8 +146,9 @@ func TestIdentityModule_EndToEndOAuthAndEnvelopeEncryption(t *testing.T) {
 	router := chi.NewRouter()
 	mod.RegisterHTTPRoutes(router)
 
-	// Clean up test user if exists from prior runs
-	_, _ = pool.Exec(ctx, "DELETE FROM identity.users WHERE email = 'testuser@gmail.com'")
+	cleaner := NewTestCleaner(t, pool)
+	cleaner.TrackEmail("testuser@gmail.com")
+	cleaner.CleanupNow()
 
 	// --- Step 1: POST /api/v1/auth/google/initiate ---
 	initReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/google/initiate", nil)

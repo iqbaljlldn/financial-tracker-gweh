@@ -278,9 +278,14 @@ func (h *InvokeAIExtractorHandler) buildCandidate(
 		CategoryConfidence: rawOutput.CategoryHint.Confidence,
 	})
 
+	accountID := cmd.GmailAccountID
+	if accountID == "" {
+		accountID = cmd.RawEmail.GmailAccountID
+	}
+
 	provenance := domain.Provenance{
 		ConnectorType:      "gmail",
-		ConnectorAccountID: cmd.GmailAccountID,
+		ConnectorAccountID: accountID,
 		SourceMessageRef:   cmd.MessageID,
 		ExtractionMethod:   domain.ExtractionMethodAI,
 		PromptVersion:      promptVersion,
@@ -394,6 +399,15 @@ func (h *InvokeAIExtractorHandler) handleSchemaInvalid(
 		})
 	}
 
+	occurredAt := cmd.RawEmail.ReceivedAt
+	if occurredAt.IsZero() {
+		occurredAt = time.Now().UTC()
+	}
+	sender := strings.TrimSpace(cmd.RawEmail.Sender)
+	if sender == "" {
+		sender = "Unknown Sender"
+	}
+
 	// Create low-confidence candidate (confidence 0.0) routing to manual review queue (Diagram 4)
 	candidate := &domain.CandidateFinancialEvent{
 		UserID:    cmd.UserID,
@@ -402,18 +416,27 @@ func (h *InvokeAIExtractorHandler) handleSchemaInvalid(
 			Value:    0.01,
 			Currency: "USD",
 		},
-		OccurredAt: time.Now().UTC(),
+		OccurredAt: occurredAt,
+		Merchant: domain.Merchant{
+			RawName:        sender,
+			NormalizedName: sender,
+		},
 		Confidence: domain.Confidence{
 			Aggregate: 0.0,
 		},
 		Provenance: domain.Provenance{
-			ConnectorType:      "gmail",
-			ConnectorAccountID: cmd.GmailAccountID,
-			SourceMessageRef:   cmd.MessageID,
-			ExtractionMethod:   domain.ExtractionMethodAI,
-			PromptVersion:      promptVersion,
-			ModelIdentifier:    llmResp.ModelIdentifier,
-			ExtractedAt:        time.Now().UTC(),
+			ConnectorType: "gmail",
+			ConnectorAccountID: func() string {
+				if cmd.GmailAccountID != "" {
+					return cmd.GmailAccountID
+				}
+				return cmd.RawEmail.GmailAccountID
+			}(),
+			SourceMessageRef: cmd.MessageID,
+			ExtractionMethod: domain.ExtractionMethodAI,
+			PromptVersion:    promptVersion,
+			ModelIdentifier:  llmResp.ModelIdentifier,
+			ExtractedAt:      time.Now().UTC(),
 		},
 		TypeSpecificPayload: map[string]any{
 			"reviewReason": "schema_invalid",
@@ -464,6 +487,15 @@ func (h *InvokeAIExtractorHandler) handleBudgetExceeded(
 	cmd InvokeAIExtractorCommand,
 	resultID, errDetail string,
 ) (*InvokeAIExtractorResult, error) {
+	occurredAt := cmd.RawEmail.ReceivedAt
+	if occurredAt.IsZero() {
+		occurredAt = time.Now().UTC()
+	}
+	sender := strings.TrimSpace(cmd.RawEmail.Sender)
+	if sender == "" {
+		sender = "Unknown Sender"
+	}
+
 	// Create low-confidence candidate for manual review with reason budget_exceeded
 	candidate := &domain.CandidateFinancialEvent{
 		UserID:    cmd.UserID,
@@ -472,16 +504,25 @@ func (h *InvokeAIExtractorHandler) handleBudgetExceeded(
 			Value:    0.01,
 			Currency: "USD",
 		},
-		OccurredAt: time.Now().UTC(),
+		OccurredAt: occurredAt,
+		Merchant: domain.Merchant{
+			RawName:        sender,
+			NormalizedName: sender,
+		},
 		Confidence: domain.Confidence{
 			Aggregate: 0.0,
 		},
 		Provenance: domain.Provenance{
-			ConnectorType:      "gmail",
-			ConnectorAccountID: cmd.GmailAccountID,
-			SourceMessageRef:   cmd.MessageID,
-			ExtractionMethod:   domain.ExtractionMethodAI,
-			ExtractedAt:        time.Now().UTC(),
+			ConnectorType: "gmail",
+			ConnectorAccountID: func() string {
+				if cmd.GmailAccountID != "" {
+					return cmd.GmailAccountID
+				}
+				return cmd.RawEmail.GmailAccountID
+			}(),
+			SourceMessageRef: cmd.MessageID,
+			ExtractionMethod: domain.ExtractionMethodAI,
+			ExtractedAt:      time.Now().UTC(),
 		},
 		TypeSpecificPayload: map[string]any{
 			"reviewReason": "budget_exceeded",

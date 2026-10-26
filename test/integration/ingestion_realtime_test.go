@@ -162,16 +162,21 @@ func setupRealtimeTestModule(
 	pool *pgxpool.Pool,
 	gmailBaseURL string,
 	verificationSecret string,
-) (*ingestion.Module, *security.SessionTokenManager, *chi.Mux) {
+) (*ingestion.Module, *security.SessionTokenManager, *chi.Mux, *mockTokenProvider) {
 	sessionSecret := []byte("session-test-jwt-secret-at-least-32-bytes-long!")
 	sessionMgr, err := security.NewSessionTokenManager(sessionSecret)
 	if err != nil {
 		t.Fatalf("failed to create session manager: %v", err)
 	}
 
+	tp := &mockTokenProvider{
+		token:           "mock_valid_token",
+		allowedAccounts: make(map[string]bool),
+	}
+
 	mod, err := ingestion.NewModule(ingestion.Config{
 		DB:                       pool,
-		TokenProvider:            &mockTokenProvider{token: "mock_valid_token"},
+		TokenProvider:            tp,
 		SessionManager:           sessionMgr,
 		GmailBaseURL:             gmailBaseURL,
 		PubSubTopic:              "projects/test-proj/topics/gmail-push-topic",
@@ -187,7 +192,7 @@ func setupRealtimeTestModule(
 	router := chi.NewRouter()
 	mod.RegisterHTTPRoutes(router)
 
-	return mod, sessionMgr, router
+	return mod, sessionMgr, router, tp
 }
 
 // TestSprint3_RealtimePushIncrementalSync tests push-triggered incremental sync via POST /webhooks/gmail/pubsub per Diagram 2.
@@ -206,10 +211,14 @@ func TestSprint3_RealtimePushIncrementalSync(t *testing.T) {
 	defer mockServer.Close()
 
 	verificationSecret := "secret_pubsub_token_777"
-	mod, sessionMgr, router := setupRealtimeTestModule(t, pool, mockServer.URL, verificationSecret)
+	mod, sessionMgr, router, tp := setupRealtimeTestModule(t, pool, mockServer.URL, verificationSecret)
 
 	userID := uuid.New().String()
 	email := fmt.Sprintf("pushuser_%s@gmail.com", uuid.New().String()[:8])
+
+	cleaner := NewTestCleaner(t, pool)
+	cleaner.TrackUser(userID)
+	cleaner.TrackEmail(email)
 
 	// 1. Link Account
 	linkRes, err := mod.LinkAccountCmd.Handle(ctx, ingestion.LinkGmailAccountCommand{
@@ -220,6 +229,8 @@ func TestSprint3_RealtimePushIncrementalSync(t *testing.T) {
 		t.Fatalf("failed to link account: %v", err)
 	}
 	account := linkRes.Account
+	tp.allow(account.ID())
+	cleaner.TrackGmailAccount(account.ID())
 	_ = account.CompleteInitialSync("hist_base_500")
 	_ = mod.Repo.Update(ctx, account)
 
@@ -297,10 +308,14 @@ func TestSprint3_PollFallbackSafetyNet_H2Verification(t *testing.T) {
 	mockServer := setupRealtimeMockGmailServer(t, state)
 	defer mockServer.Close()
 
-	mod, _, _ := setupRealtimeTestModule(t, pool, mockServer.URL, "secret_key")
+	mod, _, _, tp := setupRealtimeTestModule(t, pool, mockServer.URL, "secret_key")
 
 	userID := uuid.New().String()
 	email := fmt.Sprintf("fallback_h2_%s@gmail.com", uuid.New().String()[:8])
+
+	cleaner := NewTestCleaner(t, pool)
+	cleaner.TrackUser(userID)
+	cleaner.TrackEmail(email)
 
 	linkRes, err := mod.LinkAccountCmd.Handle(ctx, ingestion.LinkGmailAccountCommand{
 		UserID:       userID,
@@ -310,6 +325,8 @@ func TestSprint3_PollFallbackSafetyNet_H2Verification(t *testing.T) {
 		t.Fatalf("failed to link account: %v", err)
 	}
 	account := linkRes.Account
+	tp.allow(account.ID())
+	cleaner.TrackGmailAccount(account.ID())
 	_ = account.CompleteInitialSync("hist_base_500")
 	_ = mod.Repo.Update(ctx, account)
 
@@ -359,10 +376,14 @@ func TestSprint3_HistoryIdExpiry_BoundedFallback(t *testing.T) {
 	mockServer := setupRealtimeMockGmailServer(t, state)
 	defer mockServer.Close()
 
-	mod, _, _ := setupRealtimeTestModule(t, pool, mockServer.URL, "secret_key")
+	mod, _, _, tp := setupRealtimeTestModule(t, pool, mockServer.URL, "secret_key")
 
 	userID := uuid.New().String()
 	email := fmt.Sprintf("expired_%s@gmail.com", uuid.New().String()[:8])
+
+	cleaner := NewTestCleaner(t, pool)
+	cleaner.TrackUser(userID)
+	cleaner.TrackEmail(email)
 
 	linkRes, err := mod.LinkAccountCmd.Handle(ctx, ingestion.LinkGmailAccountCommand{
 		UserID:       userID,
@@ -372,6 +393,8 @@ func TestSprint3_HistoryIdExpiry_BoundedFallback(t *testing.T) {
 		t.Fatalf("failed to link account: %v", err)
 	}
 	account := linkRes.Account
+	tp.allow(account.ID())
+	cleaner.TrackGmailAccount(account.ID())
 	_ = account.CompleteInitialSync("hist_expired_cursor")
 	_ = mod.Repo.Update(ctx, account)
 
@@ -415,10 +438,14 @@ func TestSprint3_GmailWatch_RenewalSafetyMargin(t *testing.T) {
 	mockServer := setupRealtimeMockGmailServer(t, state)
 	defer mockServer.Close()
 
-	mod, _, _ := setupRealtimeTestModule(t, pool, mockServer.URL, "secret_key")
+	mod, _, _, tp := setupRealtimeTestModule(t, pool, mockServer.URL, "secret_key")
 
 	userID := uuid.New().String()
 	email := fmt.Sprintf("watch_%s@gmail.com", uuid.New().String()[:8])
+
+	cleaner := NewTestCleaner(t, pool)
+	cleaner.TrackUser(userID)
+	cleaner.TrackEmail(email)
 
 	linkRes, err := mod.LinkAccountCmd.Handle(ctx, ingestion.LinkGmailAccountCommand{
 		UserID:       userID,
@@ -428,6 +455,8 @@ func TestSprint3_GmailWatch_RenewalSafetyMargin(t *testing.T) {
 		t.Fatalf("failed to link account: %v", err)
 	}
 	account := linkRes.Account
+	tp.allow(account.ID())
+	cleaner.TrackGmailAccount(account.ID())
 	_ = account.CompleteInitialSync("hist_base_500")
 
 	// Set watch expiration to 12 hours from now (within the <= 6 days safety margin, since expiration <= now + 24h)
@@ -469,14 +498,20 @@ func TestSprint3_AccountLifecycle_DisconnectDataRetention(t *testing.T) {
 	mockServer := setupRealtimeMockGmailServer(t, state)
 	defer mockServer.Close()
 
-	mod, sessionMgr, router := setupRealtimeTestModule(t, pool, mockServer.URL, "secret_key")
+	mod, sessionMgr, router, tp := setupRealtimeTestModule(t, pool, mockServer.URL, "secret_key")
 
 	userID := uuid.New().String()
 	token, _, _ := sessionMgr.Issue(userID, "user@gmail.com", "user", 24*time.Hour)
 
+	cleaner := NewTestCleaner(t, pool)
+	cleaner.TrackUser(userID)
+
 	// Test Case A: Disconnect with purge=false (Keep data)
 	emailA := fmt.Sprintf("keep_%s@gmail.com", uuid.New().String()[:8])
+	cleaner.TrackEmail(emailA)
 	resA, _ := mod.LinkAccountCmd.Handle(ctx, ingestion.LinkGmailAccountCommand{UserID: userID, EmailAddress: emailA})
+	tp.allow(resA.Account.ID())
+	cleaner.TrackGmailAccount(resA.Account.ID())
 
 	reqA := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/v1/me/gmail-accounts/%s?purge=false", resA.Account.ID()), nil)
 	reqA.Header.Set("Authorization", "Bearer "+token)
@@ -494,7 +529,10 @@ func TestSprint3_AccountLifecycle_DisconnectDataRetention(t *testing.T) {
 
 	// Test Case B: Disconnect with purge=true (GDPR purge requested)
 	emailB := fmt.Sprintf("purge_%s@gmail.com", uuid.New().String()[:8])
+	cleaner.TrackEmail(emailB)
 	resB, _ := mod.LinkAccountCmd.Handle(ctx, ingestion.LinkGmailAccountCommand{UserID: userID, EmailAddress: emailB})
+	tp.allow(resB.Account.ID())
+	cleaner.TrackGmailAccount(resB.Account.ID())
 
 	reqB := httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/v1/me/gmail-accounts/%s?purge=true", resB.Account.ID()), nil)
 	reqB.Header.Set("Authorization", "Bearer "+token)

@@ -39,7 +39,11 @@ func TestSprint4_Diagram3_DeterministicTemplateExtraction_HappyPath(t *testing.T
 	}
 
 	userID := uuid.New().String()
+	cleaner := NewTestCleaner(t, pool)
+	cleaner.TrackUser(userID)
+
 	msgID := uuid.New().String()
+	cleaner.TrackMessage(msgID)
 
 	// Ingested BCA debit transaction email
 	rawEmail := domain.RawEmailMessage{
@@ -72,6 +76,7 @@ func TestSprint4_Diagram3_DeterministicTemplateExtraction_HappyPath(t *testing.T
 	if res.Outcome != "full" {
 		t.Errorf("expected outcome 'full', got: %s", res.Outcome)
 	}
+	cleaner.TrackExtractionResult(res.ExtractionResultID)
 	if res.ConfidenceAggregate != 1.0 {
 		t.Errorf("expected confidence aggregate 1.0, got: %f", res.ConfidenceAggregate)
 	}
@@ -112,6 +117,7 @@ func TestSprint4_Diagram3_DeterministicTemplateExtraction_HappyPath(t *testing.T
 	if outboxCount == 0 {
 		t.Errorf("expected FinancialEventCandidateCreated event in outbox")
 	}
+	_, _ = pool.Exec(ctx, "DELETE FROM understanding.outbox_events WHERE aggregate_id = $1::uuid", res.ExtractionResultID)
 }
 
 // TestSprint4_PublishTemplate_ValidationGateRejectsBrokenTemplate verifies that
@@ -132,6 +138,8 @@ func TestSprint4_PublishTemplate_ValidationGateRejectsBrokenTemplate(t *testing.
 	}
 
 	senderPattern := fmt.Sprintf("*@bank-%s.com", uuid.New().String()[:8])
+	cleaner := NewTestCleaner(t, pool)
+	cleaner.TrackTemplatePattern(senderPattern)
 
 	// Define a deliberately broken template (CSS selector does not exist in sample)
 	brokenRules := domain.ExtractionRules{
@@ -273,6 +281,8 @@ func TestSprint4_ParserMonitoring_SpikeDetectionAlert(t *testing.T) {
 	}
 
 	senderPattern := fmt.Sprintf("*@spike-%s.com", uuid.New().String()[:8])
+	cleaner := NewTestCleaner(t, pool)
+	cleaner.TrackTemplatePattern(senderPattern)
 	rules := domain.ExtractionRules{
 		SenderPattern: senderPattern,
 		Version:       1,
@@ -294,8 +304,10 @@ func TestSprint4_ParserMonitoring_SpikeDetectionAlert(t *testing.T) {
 
 	// Simulate 6 executions: 1 success, 5 failures -> failure rate = 5/6 = 83.3% (>5% threshold)
 	for i := 0; i < 5; i++ {
+		resID := uuid.New().String()
+		cleaner.TrackExtractionResult(resID)
 		_ = mod.Repo.SaveResult(ctx, &domain.ExtractionResultRecord{
-			ID:                  uuid.New().String(),
+			ID:                  resID,
 			IngestedMessageID:   uuid.New().String(),
 			Method:              domain.ExtractionMethodTemplate,
 			TemplateVersion:     &tmplVer,
@@ -303,8 +315,10 @@ func TestSprint4_ParserMonitoring_SpikeDetectionAlert(t *testing.T) {
 			CreatedAt:           time.Now().UTC(),
 		})
 	}
+	resID := uuid.New().String()
+	cleaner.TrackExtractionResult(resID)
 	_ = mod.Repo.SaveResult(ctx, &domain.ExtractionResultRecord{
-		ID:                  uuid.New().String(),
+		ID:                  resID,
 		IngestedMessageID:   uuid.New().String(),
 		Method:              domain.ExtractionMethodTemplate,
 		TemplateVersion:     &tmplVer,

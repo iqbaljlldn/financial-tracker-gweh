@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -26,10 +27,26 @@ import (
 
 // mockTokenProvider provides a test implementation of identity.TokenProvider
 type mockTokenProvider struct {
-	token string
+	token           string
+	allowedAccounts map[string]bool
+	mu              sync.RWMutex
+}
+
+func (m *mockTokenProvider) allow(accountID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.allowedAccounts == nil {
+		m.allowedAccounts = make(map[string]bool)
+	}
+	m.allowedAccounts[accountID] = true
 }
 
 func (m *mockTokenProvider) GetValidAccessToken(ctx context.Context, gmailAccountID string) (string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.allowedAccounts != nil && !m.allowedAccounts[gmailAccountID] {
+		return "", identitydomain.ErrOAuthTokenNotFound
+	}
 	if m.token != "" {
 		return m.token, nil
 	}
@@ -173,6 +190,10 @@ func TestIngestion_FullOnboardingAndInitialSyncFlow(t *testing.T) {
 
 	testUserID := uuid.New().String()
 	testEmail := fmt.Sprintf("test-%s@gmail.com", uuid.New().String()[:8])
+
+	cleaner := NewTestCleaner(t, pool)
+	cleaner.TrackUser(testUserID)
+	cleaner.TrackEmail(testEmail)
 
 	sessionToken, _, err := sessionManager.Issue(testUserID, testEmail, "user", 1*time.Hour)
 	if err != nil {

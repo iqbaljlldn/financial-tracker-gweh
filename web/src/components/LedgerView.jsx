@@ -61,6 +61,40 @@ const CATEGORIES = [
   'Other',
 ];
 
+// Reliable field extractors supporting both direct DTO and legacy nested shapes
+function getEventAmount(ev) {
+  if (!ev) return { value: '', currency: 'IDR' };
+  return ev.amount || ev.effectiveAmount || ev.originalAmount || { value: '', currency: 'IDR' };
+}
+
+function getEventMerchant(ev) {
+  if (!ev) return { rawName: '', normalizedName: '' };
+  return ev.merchant || ev.effectiveMerchant || ev.originalMerchant || { rawName: '', normalizedName: '' };
+}
+
+function getEventMerchantName(ev) {
+  const m = getEventMerchant(ev);
+  return m.rawName || m.normalizedName || 'Unknown Merchant';
+}
+
+function getEventType(ev) {
+  if (!ev) return 'purchase';
+  return ev.eventType || ev.effectiveEventType || ev.originalEventType || 'purchase';
+}
+
+function getEventCategory(ev) {
+  if (!ev) return '';
+  if (typeof ev.category === 'string') return ev.category;
+  return ev.category?.value || ev.category?.category || '';
+}
+
+function getEventConfidence(ev) {
+  if (!ev) return 0;
+  if (typeof ev.confidence === 'number') return ev.confidence;
+  if (typeof ev.confidence?.aggregate === 'number') return ev.confidence.aggregate;
+  return 0;
+}
+
 export function LedgerView() {
   const [events, setEvents] = useState([]);
   const [nextCursor, setNextCursor] = useState(null);
@@ -134,7 +168,7 @@ export function LedgerView() {
 
         const res = await apiClient.listFinancialEvents(params);
         const newItems = res?.items || [];
-        setNextCursor(res?.nextCursor || null);
+        setNextCursor(res?.pagination?.nextCursor || res?.nextCursor || null);
 
         if (cursor) {
           setEvents((prev) => [...prev, ...newItems]);
@@ -201,15 +235,15 @@ export function LedgerView() {
   const openEditModal = (event, isConfirm = false) => {
     setEditTargetEvent(event);
     setIsConfirmingWithEdit(isConfirm);
-    const effAmount = event.effectiveAmount || event.originalAmount || { value: '', currency: 'IDR' };
-    const effMerchant = event.effectiveMerchant || event.originalMerchant || { rawName: '' };
-    const effEventType = event.effectiveEventType || event.originalEventType || 'purchase';
-    const effCategory = event.category?.category || '';
+    const effAmount = getEventAmount(event);
+    const effMerchant = getEventMerchant(event);
+    const effEventType = getEventType(event);
+    const effCategory = getEventCategory(event);
 
     setOverrideForm({
       amount: effAmount.value || '',
       currency: effAmount.currency || 'IDR',
-      merchant: effMerchant.rawName || '',
+      merchant: effMerchant.rawName || effMerchant.normalizedName || '',
       eventType: effEventType,
       category: effCategory,
     });
@@ -557,12 +591,13 @@ export function LedgerView() {
               </thead>
               <tbody>
                 {events.map((ev) => {
-                  const effAmount = ev.effectiveAmount || ev.originalAmount;
-                  const effMerchant = ev.effectiveMerchant || ev.originalMerchant;
-                  const effType = ev.effectiveEventType || ev.originalEventType;
+                  const effAmount = getEventAmount(ev);
+                  const merchantName = getEventMerchantName(ev);
+                  const effType = getEventType(ev);
+                  const categoryName = getEventCategory(ev);
                   const occurred = ev.occurredAt ? new Date(ev.occurredAt).toLocaleString() : '—';
                   const isPending = ev.status === 'pending_review';
-                  const conf = ev.confidence?.aggregate ?? 0;
+                  const conf = getEventConfidence(ev);
                   const confPct = Math.round(conf * 100);
                   const isHighConf = conf >= (ev.gateDecision?.threshold || 0.8);
                   const method = ev.provenance?.extractionMethod || 'manual';
@@ -582,7 +617,7 @@ export function LedgerView() {
                       {/* Date & Merchant */}
                       <td style={{ padding: '14px 20px' }}>
                         <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: '2px' }}>
-                          {effMerchant?.rawName || 'Unknown Merchant'}
+                          {merchantName}
                         </div>
                         <div style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <Clock size={11} /> {occurred}
@@ -595,7 +630,7 @@ export function LedgerView() {
                           <span style={{ fontSize: '13px', fontWeight: 500, color: '#e2e8f0' }}>
                             {effType?.replace(/_/g, ' ').toUpperCase()}
                           </span>
-                          {ev.category?.category && (
+                          {categoryName && (
                             <span
                               style={{
                                 display: 'inline-flex',
@@ -608,7 +643,7 @@ export function LedgerView() {
                                 borderRadius: 'var(--radius-full)',
                               }}
                             >
-                              <Tag size={10} /> {ev.category.category}
+                              <Tag size={10} /> {categoryName}
                             </span>
                           )}
                         </div>
@@ -659,7 +694,10 @@ export function LedgerView() {
                             fontSize: '15px',
                             fontWeight: 700,
                             color:
-                              effType === 'salary_income' || effType === 'reward_cashback' || effType === 'refund'
+                              effType.toLowerCase().includes('income') ||
+                              effType.toLowerCase().includes('salary') ||
+                              effType.toLowerCase().includes('cashback') ||
+                              effType.toLowerCase().includes('refund')
                                 ? '#34d399'
                                 : 'var(--text-primary)',
                           }}
@@ -743,23 +781,49 @@ export function LedgerView() {
               </tbody>
             </table>
 
-            {/* Pagination Button */}
-            {nextCursor && (
-              <div style={{ padding: '16px', textAlign: 'center', borderTop: '1px solid var(--border-subtle)' }}>
+            {/* Pagination Footer */}
+            <div
+              style={{
+                padding: '16px 20px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                borderTop: '1px solid var(--border-subtle)',
+                background: 'rgba(255, 255, 255, 0.01)',
+                flexWrap: 'wrap',
+                gap: '12px',
+              }}
+            >
+              <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                Showing <strong style={{ color: 'var(--text-primary)' }}>{events.length}</strong> transactions
+                {!nextCursor && events.length > 0 && ' (all loaded)'}
+              </div>
+
+              {nextCursor && (
                 <button
                   onClick={() => fetchEvents(false, nextCursor)}
                   className="btn-secondary"
                   disabled={loadingMore}
-                  style={{ minWidth: '160px' }}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '8px 18px',
+                    fontSize: '13px',
+                    fontWeight: 500,
+                  }}
                 >
                   {loadingMore ? (
-                    <RefreshCw size={14} className="spin" />
+                    <>
+                      <RefreshCw size={14} className="spin" />
+                      <span>Loading more...</span>
+                    </>
                   ) : (
                     <span>Load More Transactions</span>
                   )}
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -861,7 +925,7 @@ export function LedgerView() {
                     <div style={{ marginBottom: '12px' }}>
                       <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Effective Amount</div>
                       <div style={{ fontSize: '28px', fontWeight: 800, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
-                        {formatMoney(selectedEvent.effectiveAmount || selectedEvent.originalAmount)}
+                        {formatMoney(getEventAmount(selectedEvent))}
                       </div>
                     </div>
 
@@ -869,19 +933,19 @@ export function LedgerView() {
                       <div>
                         <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>Merchant</div>
                         <div style={{ fontWeight: 600, marginTop: '2px' }}>
-                          {(selectedEvent.effectiveMerchant || selectedEvent.originalMerchant)?.rawName}
+                          {getEventMerchantName(selectedEvent)}
                         </div>
                       </div>
                       <div>
                         <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>Event Type</div>
                         <div style={{ fontWeight: 600, marginTop: '2px' }}>
-                          {(selectedEvent.effectiveEventType || selectedEvent.originalEventType)?.replace(/_/g, ' ')}
+                          {getEventType(selectedEvent).replace(/_/g, ' ')}
                         </div>
                       </div>
                       <div>
                         <div style={{ color: 'var(--text-muted)', fontSize: '11px' }}>Category</div>
                         <div style={{ fontWeight: 600, marginTop: '2px' }}>
-                          {selectedEvent.category?.category || 'Unassigned'}
+                          {getEventCategory(selectedEvent) || 'Unassigned'}
                         </div>
                       </div>
                       <div>
@@ -909,8 +973,8 @@ export function LedgerView() {
                       </div>
                       <div className="glass-card" style={{ padding: '12px' }}>
                         <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Aggregate Score</div>
-                        <div style={{ fontWeight: 700, marginTop: '4px', color: (selectedEvent.confidence?.aggregate ?? 0) >= 0.8 ? '#34d399' : '#fbbf24' }}>
-                          {Math.round((selectedEvent.confidence?.aggregate ?? 0) * 100)}% (Threshold: {Math.round((selectedEvent.gateDecision?.threshold || 0.8) * 100)}%)
+                        <div style={{ fontWeight: 700, marginTop: '4px', color: getEventConfidence(selectedEvent) >= 0.8 ? '#34d399' : '#fbbf24' }}>
+                          {Math.round(getEventConfidence(selectedEvent) * 100)}% (Threshold: {Math.round((selectedEvent.gateDecision?.threshold || 0.8) * 100)}%)
                         </div>
                       </div>
                     </div>
@@ -919,19 +983,19 @@ export function LedgerView() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: 'var(--text-secondary)' }}>Amount Confidence</span>
-                        <span style={{ fontFamily: 'var(--font-mono)' }}>{Math.round((selectedEvent.confidence?.amount ?? 0) * 100)}%</span>
+                        <span style={{ fontFamily: 'var(--font-mono)' }}>{Math.round((selectedEvent.confidence?.amount ?? getEventConfidence(selectedEvent)) * 100)}%</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: 'var(--text-secondary)' }}>Merchant Confidence</span>
-                        <span style={{ fontFamily: 'var(--font-mono)' }}>{Math.round((selectedEvent.confidence?.merchant ?? 0) * 100)}%</span>
+                        <span style={{ fontFamily: 'var(--font-mono)' }}>{Math.round((selectedEvent.confidence?.merchant ?? getEventConfidence(selectedEvent)) * 100)}%</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: 'var(--text-secondary)' }}>Event Type Confidence</span>
-                        <span style={{ fontFamily: 'var(--font-mono)' }}>{Math.round((selectedEvent.confidence?.eventType ?? 0) * 100)}%</span>
+                        <span style={{ fontFamily: 'var(--font-mono)' }}>{Math.round((selectedEvent.confidence?.eventType ?? getEventConfidence(selectedEvent)) * 100)}%</span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ color: 'var(--text-secondary)' }}>Category Confidence</span>
-                        <span style={{ fontFamily: 'var(--font-mono)' }}>{Math.round((selectedEvent.confidence?.category ?? 0) * 100)}%</span>
+                        <span style={{ fontFamily: 'var(--font-mono)' }}>{Math.round((selectedEvent.confidence?.category ?? (selectedEvent.category?.confidence ?? getEventConfidence(selectedEvent))) * 100)}%</span>
                       </div>
                     </div>
                   </div>
@@ -1171,8 +1235,8 @@ export function LedgerView() {
                   <div>
                     <span style={{ color: 'var(--text-muted)' }}>Before: </span>
                     <span style={{ color: '#fb7185' }}>
-                      {formatMoney(editTargetEvent.effectiveAmount || editTargetEvent.originalAmount)} •{' '}
-                      {(editTargetEvent.effectiveMerchant || editTargetEvent.originalMerchant)?.rawName}
+                      {formatMoney(getEventAmount(editTargetEvent))} •{' '}
+                      {getEventMerchantName(editTargetEvent)}
                     </span>
                   </div>
                   <div>

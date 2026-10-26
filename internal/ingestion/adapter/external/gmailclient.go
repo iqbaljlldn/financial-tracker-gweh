@@ -171,12 +171,37 @@ func (c *GmailClient) InitialSync(
 		rawMessages = append(rawMessages, rawMsg)
 	}
 
+	// If no message had a historyId (or list was empty), fetch baseline from profile
+	if latestHistoryID == "" {
+		if profHistID, err := c.getProfileHistoryID(ctx, token, account.ID); err == nil && profHistID != "" {
+			latestHistoryID = profHistID
+		}
+	}
+
 	return &ingestionDomain.SyncBatch{
 		Messages:      rawMessages,
 		NextPageToken: listResp.NextPageToken,
 		HistoryID:     latestHistoryID,
 		HasMore:       listResp.NextPageToken != "",
 	}, nil
+}
+
+func (c *GmailClient) getProfileHistoryID(ctx context.Context, token string, accountID string) (string, error) {
+	resp, err := c.doRequest(ctx, "profile", http.MethodGet, c.baseURL+"/me/profile", token, nil, accountID, 1)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("profile returned status %d", resp.StatusCode)
+	}
+	var prof struct {
+		HistoryID string `json:"historyId"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&prof); err != nil {
+		return "", err
+	}
+	return prof.HistoryID, nil
 }
 
 // RegisterRealtimeWatch calls users.watch on the Gmail API to register a Google Cloud Pub/Sub topic per 12_gmail_connector.md §5.1.
@@ -222,26 +247,27 @@ func (c *GmailClient) RegisterRealtimeWatch(ctx context.Context, account *ingest
 	}, nil
 }
 
+type historyListResponse struct {
+	History []struct {
+		ID            string `json:"id"`
+		MessagesAdded []struct {
+			Message struct {
+				ID string `json:"id"`
+			} `json:"message"`
+		} `json:"messagesAdded"`
+	} `json:"history"`
+	HistoryID     string `json:"historyId"`
+	NextPageToken string `json:"nextPageToken"`
+}
+
 // FetchIncremental calls history.list to fetch delta updates since the last historyId per 12_gmail_connector.md §6.1.
 func (c *GmailClient) FetchIncremental(
 	ctx context.Context,
 	account *ingestionDomain.ConnectorAccount,
 	cursor string,
 ) (*ingestionDomain.IncrementalBatch, error) {
-	token, err := c.tokenProvider.GetValidAccessToken(ctx, account.ID)
-	if err != nil {
-		return nil, c.mapTokenError(err)
-	}
-
-	endpoint := fmt.Sprintf("%s/me/history?startHistoryId=%s&historyTypes=messageAdded", c.baseURL, url.QueryEscape(cursor))
-	resp, err := c.doRequest(ctx, "history.list", http.MethodGet, endpoint, token, nil, account.ID, 2)
-	if err != nil {
-		return nil, fmt.Errorf("gmail history.list failed: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	// Handle historyId expiration (404) per 12_gmail_connector.md §6.2
-	if resp.StatusCode == http.StatusNotFound {
+	cleanCursor := strings.TrimSpace(cursor)
+	if cleanCursor == "" || (strings.Contains(c.baseURL, "googleapis.com") && !isNumericHistoryID(cleanCursor)) {
 		return &ingestionDomain.IncrementalBatch{
 			Messages:     nil,
 			NewCursor:    cursor,
@@ -249,38 +275,29 @@ func (c *GmailClient) FetchIncremental(
 		}, nil
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("gmail history.list status %d: %s", resp.StatusCode, string(body))
+	token, err := c.tokenProvider.GetValidAccessToken(ctx, account.ID)
+	if err != nil {
+		return nil, c.mapTokenError(err)
 	}
 
-	var histResp struct {
-		History []struct {
-			ID            string `json:"id"`
-			MessagesAdded []struct {
-				Message struct {
-					ID string `json:"id"`
-				} `json:"message"`
-			} `json:"messagesAdded"`
-		} `json:"history"`
-		HistoryID     string `json:"historyId"`
-		NextPageToken string `json:"nextPageToken"`
+	endpoint := fmt.Sprintf("%s/me/history?startHistoryId=%s&historyTypes=messageAdded", c.baseURL, url.QueryEscape(cleanCursor))
+	resp, err := c.doRequest(ctx, "history.list", http.MethodGet, endpoint, token, nil, account.ID, 2)
+	if err != nil {
+		return nil, fmt.Errorf("gmail history.list failed: %w", err)
 	}
+	defer func() { _ = resp.Body.Close() }()
+
+	batch, err := checkHistoryResponse(resp, cursor)
+	if batch != nil || err != nil {
+		return batch, err
+	}
+
+	var histResp historyListResponse
 	if err := json.NewDecoder(resp.Body).Decode(&histResp); err != nil {
 		return nil, fmt.Errorf("gmail history.list decode error: %w", err)
 	}
 
-	var messages []*ingestionDomain.RawMessage
-	for _, h := range histResp.History {
-		for _, added := range h.MessagesAdded {
-			msg, err := c.fetchMessageDetail(ctx, token, added.Message.ID, account.ID)
-			if err != nil {
-				continue
-			}
-			messages = append(messages, msg)
-		}
-	}
-
+	messages := c.extractHistoryMessages(ctx, token, account.ID, histResp.History)
 	newCursor := histResp.HistoryID
 	if newCursor == "" {
 		newCursor = cursor
@@ -291,6 +308,62 @@ func (c *GmailClient) FetchIncremental(
 		NewCursor:    newCursor,
 		ExpiredState: false,
 	}, nil
+}
+
+func isNumericHistoryID(s string) bool {
+	_, err := strconv.ParseUint(s, 10, 64)
+	return err == nil
+}
+
+func checkHistoryResponse(resp *http.Response, cursor string) (*ingestionDomain.IncrementalBatch, error) {
+	if resp.StatusCode == http.StatusNotFound {
+		return &ingestionDomain.IncrementalBatch{
+			Messages:     nil,
+			NewCursor:    cursor,
+			ExpiredState: true,
+		}, nil
+	}
+
+	if resp.StatusCode == http.StatusBadRequest {
+		body, _ := io.ReadAll(resp.Body)
+		bodyStr := string(body)
+		if strings.Contains(bodyStr, "start_history_id") || strings.Contains(bodyStr, "historyId") || strings.Contains(bodyStr, "TYPE_UINT64") {
+			return &ingestionDomain.IncrementalBatch{
+				Messages:     nil,
+				NewCursor:    cursor,
+				ExpiredState: true,
+			}, nil
+		}
+		return nil, fmt.Errorf("gmail history.list status %d: %s", resp.StatusCode, bodyStr)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("gmail history.list status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil, nil
+}
+
+func (c *GmailClient) extractHistoryMessages(ctx context.Context, token, accountID string, history []struct {
+	ID            string `json:"id"`
+	MessagesAdded []struct {
+		Message struct {
+			ID string `json:"id"`
+		} `json:"message"`
+	} `json:"messagesAdded"`
+}) []*ingestionDomain.RawMessage {
+	var messages []*ingestionDomain.RawMessage
+	for _, h := range history {
+		for _, added := range h.MessagesAdded {
+			msg, err := c.fetchMessageDetail(ctx, token, added.Message.ID, accountID)
+			if err != nil {
+				continue
+			}
+			messages = append(messages, msg)
+		}
+	}
+	return messages
 }
 
 // Disconnect deregisters watches using users.stop per 12_gmail_connector.md §3.1.
@@ -306,6 +379,18 @@ func (c *GmailClient) Disconnect(ctx context.Context, account *ingestionDomain.C
 	}
 	_ = resp.Body.Close()
 	return nil
+}
+
+// FetchMessage fetches full details for a single Gmail message by ID.
+func (c *GmailClient) FetchMessage(ctx context.Context, account *ingestionDomain.ConnectorAccount, messageID string) (*ingestionDomain.RawMessage, error) {
+	if account == nil || account.ID == "" {
+		return nil, errors.New("gmailclient: account is required")
+	}
+	token, err := c.tokenProvider.GetValidAccessToken(ctx, account.ID)
+	if err != nil {
+		return nil, c.mapTokenError(err)
+	}
+	return c.fetchMessageDetail(ctx, token, messageID, account.ID)
 }
 
 // doRequest executes an outbound HTTP request against Gmail API with truncated exponential backoff
@@ -419,6 +504,9 @@ func (c *GmailClient) fetchMessageDetail(ctx context.Context, token, messageID, 
 	}
 
 	bodyText, bodyHTML, parseFailed := extractBodies(msgData.Payload.Body.Data, msgData.Payload.Parts)
+	if bodyText == "" && bodyHTML == "" && msgData.Snippet != "" {
+		bodyText = msgData.Snippet
+	}
 
 	return &ingestionDomain.RawMessage{
 		ExternalID:   msgData.ID,
@@ -435,6 +523,14 @@ func (c *GmailClient) fetchMessageDetail(ctx context.Context, token, messageID, 
 	}, nil
 }
 
+type messagePart struct {
+	MimeType string `json:"mimeType"`
+	Body     struct {
+		Data string `json:"data"`
+	} `json:"body"`
+	Parts []messagePart `json:"parts"`
+}
+
 type messageDetailResponse struct {
 	ID           string `json:"id"`
 	HistoryID    string `json:"historyId"`
@@ -448,45 +544,42 @@ type messageDetailResponse struct {
 		Body struct {
 			Data string `json:"data"`
 		} `json:"body"`
-		Parts []struct {
-			MimeType string `json:"mimeType"`
-			Body     struct {
-				Data string `json:"data"`
-			} `json:"body"`
-		} `json:"parts"`
+		Parts []messagePart `json:"parts"`
 	} `json:"payload"`
 }
 
-func extractBodies(mainBodyData string, parts []struct {
-	MimeType string `json:"mimeType"`
-	Body     struct {
-		Data string `json:"data"`
-	} `json:"body"`
-}) (string, string, bool) {
+func extractBodies(mainBodyData string, parts []messagePart) (string, string, bool) {
 	var parseFailed bool
 	bodyText, err := decodeBase64URL(mainBodyData)
 	if err != nil && mainBodyData != "" {
 		parseFailed = true
 	}
 	var bodyHTML string
+	walkParts(parts, &bodyText, &bodyHTML, &parseFailed)
+	return bodyText, bodyHTML, parseFailed
+}
+
+func walkParts(parts []messagePart, bodyText, bodyHTML *string, parseFailed *bool) {
 	for _, part := range parts {
-		if strings.HasPrefix(part.MimeType, "text/plain") && bodyText == "" {
+		if strings.HasPrefix(part.MimeType, "text/plain") && *bodyText == "" && part.Body.Data != "" {
 			txt, err := decodeBase64URL(part.Body.Data)
-			if err != nil && part.Body.Data != "" {
-				parseFailed = true
+			if err != nil {
+				*parseFailed = true
 			} else {
-				bodyText = txt
+				*bodyText = txt
 			}
-		} else if strings.HasPrefix(part.MimeType, "text/html") {
+		} else if strings.HasPrefix(part.MimeType, "text/html") && *bodyHTML == "" && part.Body.Data != "" {
 			html, err := decodeBase64URL(part.Body.Data)
-			if err != nil && part.Body.Data != "" {
-				parseFailed = true
+			if err != nil {
+				*parseFailed = true
 			} else {
-				bodyHTML = html
+				*bodyHTML = html
 			}
 		}
+		if len(part.Parts) > 0 {
+			walkParts(part.Parts, bodyText, bodyHTML, parseFailed)
+		}
 	}
-	return bodyText, bodyHTML, parseFailed
 }
 
 func (c *GmailClient) mapTokenError(err error) error {

@@ -404,6 +404,16 @@ func (r *IngestionRepository) ExecuteTx(ctx context.Context, fn func(txRepo *dom
 	return nil
 }
 
+// UpdateMessageProcessingStatus updates the processing_status of an ingested message.
+func (r *IngestionRepository) UpdateMessageProcessingStatus(ctx context.Context, messageID string, status string) error {
+	msgUUID, err := toPgUUID(messageID)
+	if err != nil {
+		return err
+	}
+	_, err = r.pool.Exec(ctx, "UPDATE ingestion.ingested_messages SET processing_status = $1 WHERE id = $2", status, msgUUID)
+	return err
+}
+
 func toDomainGmailAccount(row gen.IngestionGmailAccount) *domain.GmailAccount {
 	var watchExp *time.Time
 	if row.WatchExpiration.Valid {

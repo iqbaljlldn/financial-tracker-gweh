@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -23,6 +24,7 @@ import (
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/identity"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/ingestion"
 	ingestionCmd "github.com/iqbaljlldn/financial-tracker-gweh/internal/ingestion/application/command"
+	ingestionDomain "github.com/iqbaljlldn/financial-tracker-gweh/internal/ingestion/domain"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/platform/config"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/platform/httpserver"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/platform/observability"
@@ -31,6 +33,7 @@ import (
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding/application/categorization"
 	understandingCmd "github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding/application/command"
+	understandingDomain "github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding/domain"
 )
 
 var (
@@ -414,6 +417,12 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 	}
 	defer ingestionMod.StopOutboxRelay()
 
+	// Start Understanding Outbox Relay
+	if err := understandingMod.StartOutboxRelay(ctx); err != nil {
+		logger.Error("failed to start understanding outbox relay", slog.String("error", err.Error()))
+	}
+	defer understandingMod.StopOutboxRelay()
+
 	// Start Poll-Fallback Safety Net Scheduler [GATE - H2 Resolution]
 	ingestionMod.PollFallbackScheduler.Start(ctx)
 	defer ingestionMod.PollFallbackScheduler.Stop()
@@ -528,7 +537,77 @@ func registerWorkerTaskHandlers(
 	})
 
 	mux.HandleFunc(taskserver.TaskMessageIngested, func(ctx context.Context, t *asynq.Task) error {
-		logger.Debug("worker acknowledged message ingested task", "payload_len", len(t.Payload()))
+		var payload ingestionDomain.MessageIngestedPayload
+		if err := json.Unmarshal(t.Payload(), &payload); err != nil {
+			return fmt.Errorf("unmarshaling MessageIngestedPayload: %w", err)
+		}
+
+		logger.Info("processing TaskMessageIngested",
+			"message_id", payload.MessageID,
+			"gmail_account_id", payload.GmailAccountID,
+			"gmail_message_id", payload.GmailMessageID,
+			"decision", payload.RoutingDecision,
+		)
+
+		if payload.RoutingDecision == ingestionDomain.RoutingDiscarded {
+			_ = ingestionMod.Repo.UpdateMessageProcessingStatus(ctx, payload.MessageID, "completed")
+			return nil
+		}
+
+		account, err := ingestionMod.Repo.FindByID(ctx, payload.GmailAccountID)
+		if err != nil {
+			return fmt.Errorf("finding gmail account %s: %w", payload.GmailAccountID, err)
+		}
+		if account == nil {
+			return fmt.Errorf("gmail account %s not found", payload.GmailAccountID)
+		}
+
+		connAccount := &ingestionDomain.ConnectorAccount{
+			ID:           account.ID(),
+			EmailAddress: account.EmailAddress(),
+			Provider:     "gmail",
+		}
+		rawMsg, err := ingestionMod.Connector.FetchMessage(ctx, connAccount, payload.GmailMessageID)
+		if err != nil {
+			logger.Warn("failed to fetch message detail from connector",
+				"gmail_message_id", payload.GmailMessageID,
+				"error", err.Error(),
+			)
+			_ = ingestionMod.Repo.UpdateMessageProcessingStatus(ctx, payload.MessageID, "failed")
+			return fmt.Errorf("fetching message detail %s: %w", payload.GmailMessageID, err)
+		}
+
+		rawEmail := understandingDomain.RawEmailMessage{
+			MessageID:      payload.MessageID,
+			GmailAccountID: payload.GmailAccountID,
+			Sender:         rawMsg.From,
+			Subject:        rawMsg.Subject,
+			Headers:        rawMsg.Headers,
+			BodyHTML:       rawMsg.BodyHTML,
+			BodyText:       rawMsg.BodyText,
+			ReceivedAt:     rawMsg.InternalDate,
+		}
+
+		routeRes, err := understandingMod.ClassifyAndRouteCmd.Handle(ctx, understandingCmd.ClassifyAndRouteMessageCommand{
+			MessageID:      payload.MessageID,
+			GmailAccountID: payload.GmailAccountID,
+			UserID:         account.UserID(),
+			RawEmail:       rawEmail,
+		})
+		if err != nil {
+			logger.Error("failed to classify and route message",
+				"message_id", payload.MessageID,
+				"error", err.Error(),
+			)
+			_ = ingestionMod.Repo.UpdateMessageProcessingStatus(ctx, payload.MessageID, "failed")
+			return fmt.Errorf("classifying and routing message %s: %w", payload.MessageID, err)
+		}
+
+		logger.Info("routed ingested message successfully",
+			"message_id", payload.MessageID,
+			"route", routeRes.Route,
+		)
+		_ = ingestionMod.Repo.UpdateMessageProcessingStatus(ctx, payload.MessageID, "completed")
 		return nil
 	})
 

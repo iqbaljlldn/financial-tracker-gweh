@@ -56,6 +56,9 @@ func TestSprint6_Diagram3_TemplateToFinalizeHappyPath(t *testing.T) {
 	}
 
 	userID := uuid.New().String()
+	cleaner := NewTestCleaner(t, pool)
+	cleaner.TrackUser(userID)
+
 	connectorAccountID := uuid.New().String()
 	sourceRef := "msg_diag3_" + uuid.New().String()
 	extractedAt := time.Now().UTC()
@@ -172,6 +175,9 @@ func TestSprint6_Diagram4_PendingReviewToConfirmToFinalize(t *testing.T) {
 	}
 
 	userID := uuid.New().String()
+	cleaner := NewTestCleaner(t, pool)
+	cleaner.TrackUser(userID)
+
 	sourceRef := "msg_diag4_" + uuid.New().String()
 
 	candidatePayload := domain.CandidateCreatedPayload{
@@ -275,6 +281,9 @@ func TestSprint6_Diagram5_DuplicateDeliveryIdempotency(t *testing.T) {
 	}
 
 	userID := uuid.New().String()
+	cleaner := NewTestCleaner(t, pool)
+	cleaner.TrackUser(userID)
+
 	connectorAccountID := uuid.New().String()
 	sourceRef := "msg_dedup_inv3_" + uuid.New().String()
 
@@ -366,6 +375,9 @@ func TestSprint6_ManualOverrideAndAuditTrail(t *testing.T) {
 	}
 
 	userID := uuid.New().String()
+	cleaner := NewTestCleaner(t, pool)
+	cleaner.TrackUser(userID)
+
 	fe, err := mod.ManualEventCmd.Handle(ctx, command.CreateManualEventCommand{
 		UserID:            userID,
 		EventType:         string(domain.EventTypeExpense),
@@ -460,6 +472,9 @@ func TestSprint6_HTTP_Endpoints(t *testing.T) {
 	defer ts.Close()
 
 	userID := uuid.New().String()
+	cleaner := NewTestCleaner(t, pool)
+	cleaner.TrackUser(userID)
+
 	token, _, err := sessionManager.Issue(userID, "user@example.com", "user", time.Hour)
 	if err != nil {
 		t.Fatalf("token issue failed: %v", err)
