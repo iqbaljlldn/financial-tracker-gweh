@@ -220,14 +220,30 @@ func (h *Handler) UpdatePreferences(w http.ResponseWriter, r *http.Request) {
 
 // --- Webhooks ---
 
+type flexWebhookID string
+
+func (f *flexWebhookID) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 || string(data) == "null" {
+		*f = ""
+		return nil
+	}
+	var rawList []json.RawMessage
+	if err := json.Unmarshal(data, &rawList); err == nil && len(rawList) > 0 {
+		*f = flexWebhookID(strings.Trim(string(rawList[0]), "\""))
+		return nil
+	}
+	*f = flexWebhookID(strings.Trim(string(data), "\""))
+	return nil
+}
+
 // HandleFonnteWebhook processes incoming messages and delivery statuses from Fonnte.
 func (h *Handler) HandleFonnteWebhook(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
-		ID      string `json:"id"`
-		Sender  string `json:"sender"`
-		Message string `json:"message"`
-		Button  string `json:"button"`
-		Status  string `json:"status"`
+		ID      flexWebhookID `json:"id"`
+		Sender  string        `json:"sender"`
+		Message string        `json:"message"`
+		Button  string        `json:"button"`
+		Status  string        `json:"status"`
 	}
 
 	bodyBytes, err := io.ReadAll(r.Body)
@@ -242,19 +258,24 @@ func (h *Handler) HandleFonnteWebhook(w http.ResponseWriter, r *http.Request) {
 		payload.Message = r.FormValue("message")
 		payload.Button = r.FormValue("button")
 		payload.Status = r.FormValue("status")
-		payload.ID = r.FormValue("id")
+		payload.ID = flexWebhookID(r.FormValue("id"))
+	}
+
+	idStr := string(payload.ID)
+	if idStr == "" {
+		idStr = r.FormValue("id")
 	}
 
 	h.logger.InfoContext(r.Context(), "received Fonnte webhook",
 		"sender", payload.Sender,
 		"status", payload.Status,
-		"id", payload.ID,
+		"id", idStr,
 	)
 
 	// If it's a delivery status update:
-	if payload.Status != "" && payload.ID != "" && h.processDeliveryStatus != nil {
+	if payload.Status != "" && idStr != "" && h.processDeliveryStatus != nil {
 		_ = h.processDeliveryStatus.Handle(r.Context(), command.DeliveryStatusCommand{
-			ProviderMessageID: payload.ID,
+			ProviderMessageID: idStr,
 			Status:            payload.Status,
 			Timestamp:         time.Now().UTC(),
 		})

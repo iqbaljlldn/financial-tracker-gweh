@@ -63,12 +63,41 @@ type fonnteSendRequest struct {
 	Button      string `json:"button,omitempty"`
 }
 
+type flexIDList []string
+
+func (f *flexIDList) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 || string(data) == "null" {
+		*f = nil
+		return nil
+	}
+
+	var rawList []json.RawMessage
+	if err := json.Unmarshal(data, &rawList); err == nil {
+		out := make([]string, 0, len(rawList))
+		for _, item := range rawList {
+			s := strings.Trim(string(item), "\"")
+			if s != "" && s != "null" {
+				out = append(out, s)
+			}
+		}
+		*f = out
+		return nil
+	}
+
+	s := strings.Trim(string(data), "\"")
+	if s != "" && s != "null" {
+		*f = []string{s}
+	}
+	return nil
+}
+
 type fonnteSendResponse struct {
-	Status  bool     `json:"status"`
-	ID      []string `json:"id,omitempty"`
-	Reason  string   `json:"reason,omitempty"`
-	Detail  string   `json:"detail,omitempty"`
-	Process string   `json:"process,omitempty"`
+	Status    bool            `json:"status"`
+	ID        flexIDList      `json:"id,omitempty"`
+	RequestID json.RawMessage `json:"requestid,omitempty"`
+	Reason    string          `json:"reason,omitempty"`
+	Detail    string          `json:"detail,omitempty"`
+	Process   string          `json:"process,omitempty"`
 }
 
 // SendMessage dispatches a WhatsApp message via Fonnte /send endpoint.
@@ -158,6 +187,8 @@ func (c *Client) SendMessage(ctx context.Context, msg domain.OutboundMessage) (*
 	msgID := ""
 	if len(res.ID) > 0 {
 		msgID = res.ID[0]
+	} else if len(res.RequestID) > 0 {
+		msgID = strings.Trim(string(res.RequestID), "\"")
 	}
 
 	return &domain.SendResult{
