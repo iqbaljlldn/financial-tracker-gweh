@@ -55,6 +55,13 @@ const (
 	TaskProjectAnalytics = "analytics:project_read_models"
 )
 
+// Task names for Engagement module.
+const (
+	TaskComposeNotification   = "engagement:compose_notification"
+	TaskDeliverNotification   = "engagement:deliver_notification"
+	TaskRunScheduledBroadcast = "engagement:run_scheduled_broadcast"
+)
+
 // DefaultQueueWeights provides standard priority weighting per 06_architecture.md §6.3.
 var DefaultQueueWeights = map[string]int{
 	QueueIngestionCritical:     6,

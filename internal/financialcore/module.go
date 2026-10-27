@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -116,6 +117,15 @@ func (m *Module) RegisterHTTPRoutes(r chi.Router) {
 	m.HTTPHandler.RegisterRoutes(r)
 }
 
+// ConfirmReview confirms and finalizes a pending_review financial event on behalf of the user.
+func (m *Module) ConfirmReview(ctx context.Context, userID, eventID string) error {
+	_, err := m.ConfirmReviewCmd.Handle(ctx, command.ConfirmPendingReviewCommand{
+		UserID:  userID,
+		EventID: eventID,
+	})
+	return err
+}
+
 // RegisterWorkerTasks binds financialcore asynchronous task consumers onto the Asynq worker router.
 func (m *Module) RegisterWorkerTasks(mux *asynq.ServeMux) {
 	mux.HandleFunc(taskserver.TaskEvaluateConfidenceGate, m.handleEvaluateConfidenceGateTask)
@@ -224,6 +234,25 @@ func (m *Module) pollOutbox(ctx context.Context) {
 				})
 				task := asynq.NewTask(taskserver.TaskProjectAnalytics, analyticsPayload)
 				_, _ = m.asynqClient.Enqueue(task, asynq.Queue(taskserver.QueueAnalyticsProject))
+			}
+		}
+
+		// Relay to Engagement review request notification
+		if row.EventType == domain.EventFinancialEventPendingReview && m.asynqClient != nil {
+			var p domain.FinancialEventPendingReviewPayload
+			if err := json.Unmarshal(row.Payload, &p); err == nil {
+				amtVal, _ := strconv.ParseFloat(p.Amount.Value(), 64)
+				composePayload, _ := json.Marshal(map[string]any{
+					"type":              "review_request",
+					"userId":            p.UserID,
+					"financialEventId":  p.EventID,
+					"amountValue":       amtVal,
+					"amountCurrency":    p.Amount.Currency(),
+					"merchantName":      p.Merchant,
+					"suggestedCategory": p.SuggestedCategory,
+				})
+				task := asynq.NewTask(taskserver.TaskComposeNotification, composePayload)
+				_, _ = m.asynqClient.Enqueue(task, asynq.Queue(taskserver.QueueEngagementCompose))
 			}
 		}
 

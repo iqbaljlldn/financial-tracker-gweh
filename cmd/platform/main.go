@@ -20,6 +20,10 @@ import (
 
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/analytics"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/budget"
+	"github.com/iqbaljlldn/financial-tracker-gweh/internal/engagement"
+	"github.com/iqbaljlldn/financial-tracker-gweh/internal/engagement/adapter/external/messaging"
+	"github.com/iqbaljlldn/financial-tracker-gweh/internal/engagement/adapter/external/messaging/fonnte"
+	"github.com/iqbaljlldn/financial-tracker-gweh/internal/engagement/adapter/external/messaging/meta"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/financialcore"
 	fcCmd "github.com/iqbaljlldn/financial-tracker-gweh/internal/financialcore/application/command"
 	fcDomain "github.com/iqbaljlldn/financial-tracker-gweh/internal/financialcore/domain"
@@ -335,13 +339,45 @@ func runAPI(ctx context.Context, logger *slog.Logger) {
 		SessionManager: sessionManager,
 	})
 
-	// Mount Identity, Ingestion, Understanding, FinancialCore, Budget, and Analytics routes
+	messagingClient := messaging.NewMessagingClient(messaging.ProviderConfig{
+		Provider: cfg.Engagement.Provider,
+		Fonnte: fonnte.Config{
+			BaseURL:     cfg.Engagement.FonnteBaseURL,
+			APIToken:    cfg.Engagement.FonnteAPIToken,
+			CountryCode: cfg.Engagement.FonnteCountryCode,
+		},
+		Meta: meta.Config{
+			PhoneNumberID:      cfg.Engagement.WhatsAppPhoneNumberID,
+			AccessToken:        cfg.Engagement.WhatsAppToken,
+			AppSecret:          cfg.Engagement.MetaAppSecret,
+			WebhookVerifyToken: cfg.Engagement.MetaWebhookVerify,
+		},
+	})
+
+	engagementMod, err := engagement.NewModule(engagement.Config{
+		DB:              dbPool,
+		SessionManager:  sessionManager,
+		Analytics:       analyticsMod.AnalyticsSnapshotReader(),
+		MessagingClient: messagingClient,
+		ReviewConfirmer: financialcoreMod,
+		AsynqClient:     asynqClient,
+		MetaVerifyToken: cfg.Engagement.MetaWebhookVerify,
+		MetaAppSecret:   cfg.Engagement.MetaAppSecret,
+		Logger:          logger,
+	})
+	if err != nil {
+		logger.Error("failed to initialize engagement module", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
+	// Mount Identity, Ingestion, Understanding, FinancialCore, Budget, Analytics, and Engagement routes
 	identityMod.RegisterHTTPRoutes(server.Router())
 	ingestionMod.RegisterHTTPRoutes(server.Router())
 	understandingMod.RegisterHTTPRoutes(server.Router())
 	financialcoreMod.RegisterHTTPRoutes(server.Router())
 	budgetMod.RegisterHTTPRoutes(server.Router())
 	analyticsMod.RegisterHTTPRoutes(server.Router())
+	engagementMod.RegisterHTTPRoutes(server.Router())
 
 	serverErr := make(chan error, 1)
 	go func() {
@@ -458,6 +494,7 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 	budgetMod, err := budget.NewModule(budget.Config{
 		DB:             dbPool,
 		SessionManager: sessionManager,
+		AsynqClient:    asynqClient,
 		Logger:         logger,
 	})
 	if err != nil {
@@ -469,6 +506,37 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 		DBPool:         dbPool,
 		SessionManager: sessionManager,
 	})
+
+	workerMessagingClient := messaging.NewMessagingClient(messaging.ProviderConfig{
+		Provider: cfg.Engagement.Provider,
+		Fonnte: fonnte.Config{
+			BaseURL:     cfg.Engagement.FonnteBaseURL,
+			APIToken:    cfg.Engagement.FonnteAPIToken,
+			CountryCode: cfg.Engagement.FonnteCountryCode,
+		},
+		Meta: meta.Config{
+			PhoneNumberID:      cfg.Engagement.WhatsAppPhoneNumberID,
+			AccessToken:        cfg.Engagement.WhatsAppToken,
+			AppSecret:          cfg.Engagement.MetaAppSecret,
+			WebhookVerifyToken: cfg.Engagement.MetaWebhookVerify,
+		},
+	})
+
+	engagementMod, err := engagement.NewModule(engagement.Config{
+		DB:              dbPool,
+		SessionManager:  sessionManager,
+		Analytics:       analyticsMod.AnalyticsSnapshotReader(),
+		MessagingClient: workerMessagingClient,
+		ReviewConfirmer: financialcoreMod,
+		AsynqClient:     asynqClient,
+		MetaVerifyToken: cfg.Engagement.MetaWebhookVerify,
+		MetaAppSecret:   cfg.Engagement.MetaAppSecret,
+		Logger:          logger,
+	})
+	if err != nil {
+		logger.Error("failed to initialize engagement module in worker", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
 
 	// Start Ingestion Outbox Relay
 	if err := ingestionMod.StartOutboxRelay(ctx); err != nil {
@@ -494,6 +562,12 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 	}
 	defer budgetMod.StopOutboxRelay()
 
+	// Start Engagement Outbox Relay
+	if err := engagementMod.StartOutboxRelay(ctx); err != nil {
+		logger.Error("failed to start engagement outbox relay", slog.String("error", err.Error()))
+	}
+	defer engagementMod.StopOutboxRelay()
+
 	// Start Poll-Fallback Safety Net Scheduler [GATE - H2 Resolution]
 	ingestionMod.PollFallbackScheduler.Start(ctx)
 	defer ingestionMod.PollFallbackScheduler.Stop()
@@ -510,7 +584,7 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 	}
 
 	mux := asynq.NewServeMux()
-	registerWorkerTaskHandlers(mux, ingestionMod, understandingMod, financialcoreMod, budgetMod, analyticsMod, logger)
+	registerWorkerTaskHandlers(mux, ingestionMod, understandingMod, financialcoreMod, budgetMod, analyticsMod, engagementMod, logger)
 
 	// Periodic watch renewal and parser metrics background loop
 	go func() {
@@ -530,6 +604,12 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 				_ = financialcoreMod.CheckSLACmd.Handle(ctx, fcCmd.CheckPendingReviewSLACommand{
 					Now: time.Now(),
 				})
+				// Trigger periodic daily summary broadcast
+				bcastPayload, _ := json.Marshal(map[string]any{
+					"notificationType": "daily_summary",
+				})
+				bcastTask := asynq.NewTask(taskserver.TaskRunScheduledBroadcast, bcastPayload)
+				_, _ = asynqClient.Enqueue(bcastTask, asynq.Queue(taskserver.QueueEngagementCompose))
 			}
 		}
 	}()
@@ -553,6 +633,7 @@ func registerWorkerTaskHandlers(
 	financialcoreMod *financialcore.Module,
 	budgetMod *budget.Module,
 	analyticsMod *analytics.Module,
+	engagementMod *engagement.Module,
 	logger *slog.Logger,
 ) {
 	mux.HandleFunc(taskserver.TaskStartInitialFullSync, func(ctx context.Context, t *asynq.Task) error {
@@ -688,4 +769,5 @@ func registerWorkerTaskHandlers(
 	financialcoreMod.RegisterWorkerTasks(mux)
 	budgetMod.RegisterWorkerTasks(mux)
 	analyticsMod.RegisterWorkerTasks(mux)
+	engagementMod.RegisterWorkerTasks(mux)
 }

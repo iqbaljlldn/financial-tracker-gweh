@@ -254,6 +254,9 @@ func (c *TestCleaner) CleanupNow() {
 
 	// 8. Users
 	for userID := range c.userIDs {
+		_, _ = pool.Exec(ctx, "DELETE FROM engagement.notification_jobs WHERE user_id = $1::uuid", userID)
+		_, _ = pool.Exec(ctx, "DELETE FROM engagement.notification_preferences WHERE user_id = $1::uuid", userID)
+		_, _ = pool.Exec(ctx, "DELETE FROM engagement.outbox_events WHERE aggregate_id = $1::uuid", userID)
 		_, _ = pool.Exec(ctx, "DELETE FROM analytics.cash_flow_view WHERE user_id = $1::uuid", userID)
 		_, _ = pool.Exec(ctx, "DELETE FROM analytics.category_breakdown_view WHERE user_id = $1::uuid", userID)
 		_, _ = pool.Exec(ctx, "DELETE FROM analytics.merchant_ranking_view WHERE user_id = $1::uuid", userID)

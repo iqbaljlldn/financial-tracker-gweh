@@ -27,6 +27,7 @@ import (
 type Config struct {
 	DB             *pgxpool.Pool
 	SessionManager *security.SessionTokenManager
+	AsynqClient    *asynq.Client
 	Logger         *slog.Logger
 }
 
@@ -45,6 +46,7 @@ type Module struct {
 	HTTPHandler             *budgetHttp.Handler
 	logger                  *slog.Logger
 	dbPool                  *pgxpool.Pool
+	asynqClient             *asynq.Client
 
 	outboxRelayCancel context.CancelFunc
 	outboxRelayWg     sync.WaitGroup
@@ -100,6 +102,7 @@ func NewModule(cfg Config) (*Module, error) {
 		HTTPHandler:             httpHandler,
 		logger:                  cfg.Logger,
 		dbPool:                  cfg.DB,
+		asynqClient:             cfg.AsynqClient,
 	}, nil
 }
 
@@ -178,7 +181,30 @@ func (m *Module) pollOutbox(ctx context.Context) {
 
 	ids := make([]pgtype.UUID, 0, len(rows))
 	for _, row := range rows {
-		// Log relayed event (Engagement module Sprint 9 will consume this)
+		if row.EventType == "BudgetThresholdCrossed" && m.asynqClient != nil {
+			var p struct {
+				BudgetID        string  `json:"budgetId"`
+				UserID          string  `json:"userId"`
+				Category        string  `json:"category"`
+				Threshold       float64 `json:"threshold"`
+				ThresholdAmount float64 `json:"thresholdAmount"`
+				CurrentSpend    float64 `json:"currentSpend"`
+			}
+			if err := json.Unmarshal(row.Payload, &p); err == nil {
+				composePayload, _ := json.Marshal(map[string]any{
+					"type":            "budget_alert",
+					"userId":          p.UserID,
+					"budgetId":        p.BudgetID,
+					"category":        p.Category,
+					"threshold":       p.Threshold,
+					"thresholdAmount": p.ThresholdAmount,
+					"currentSpend":    p.CurrentSpend,
+				})
+				task := asynq.NewTask(taskserver.TaskComposeNotification, composePayload)
+				_, _ = m.asynqClient.Enqueue(task, asynq.Queue(taskserver.QueueEngagementCompose))
+			}
+		}
+
 		m.logger.InfoContext(ctx, "relayed budget outbox event",
 			"event_type", row.EventType,
 			"aggregate_id", row.AggregateID,

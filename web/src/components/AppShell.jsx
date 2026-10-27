@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Cpu,
   Wallet,
+  MessageSquare,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import SettingsDrawer from './SettingsDrawer';
@@ -25,6 +26,7 @@ import { ParserMonitoringView } from './ParserMonitoringView';
 import { LedgerView } from './LedgerView';
 import { BudgetView } from './BudgetView';
 import AnalyticsView from './AnalyticsView';
+import NotificationPreferencesView from './NotificationPreferencesView';
 
 export default function AppShell() {
   const { user, logout, refreshProfile } = useAuth();
@@ -277,6 +279,27 @@ export default function AppShell() {
           </button>
 
           <button
+            onClick={() => setActiveTab('notifications')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              padding: '10px 14px',
+              borderRadius: 'var(--radius-sm)',
+              border: 'none',
+              background: activeTab === 'notifications' ? 'rgba(37, 211, 102, 0.15)' : 'transparent',
+              color: activeTab === 'notifications' ? '#25D366' : 'var(--text-secondary)',
+              fontWeight: activeTab === 'notifications' ? 600 : 500,
+              fontSize: '14px',
+              cursor: 'pointer',
+              textAlign: 'left',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <MessageSquare size={16} /> WhatsApp Hub
+          </button>
+
+          <button
             onClick={() => setActiveTab('audit')}
             style={{
               display: 'flex',
@@ -419,6 +442,8 @@ export default function AppShell() {
           {activeTab === 'budgets' && <BudgetView />}
 
           {activeTab === 'analytics' && <AnalyticsView />}
+
+          {activeTab === 'notifications' && <NotificationPreferencesView />}
 
           {activeTab === 'audit' && (
             <div>

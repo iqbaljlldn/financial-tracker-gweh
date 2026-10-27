@@ -81,6 +81,21 @@ func (m *Module) RegisterHTTPRoutes(r chi.Router) {
 	m.httpHandler.RegisterRoutes(r)
 }
 
+// GetCashFlow provides cash flow projection data.
+func (m *Module) GetCashFlow(ctx context.Context, params query.GetCashFlowParams) (*query.CashFlowResult, error) {
+	return m.cashFlowQuery.Handle(ctx, params)
+}
+
+// GetCategoryBreakdown provides category breakdown projection data.
+func (m *Module) GetCategoryBreakdown(ctx context.Context, params query.GetCategoryBreakdownParams) (*query.CategoryBreakdownResult, error) {
+	return m.categoryBreakdownQuery.Handle(ctx, params)
+}
+
+// GetTrend provides trend projection data.
+func (m *Module) GetTrend(ctx context.Context, params query.GetTrendParams) (*query.TrendResult, error) {
+	return m.trendQuery.Handle(ctx, params)
+}
+
 // ProjectAnalyticsTaskPayload represents the task payload sent via asynq for projection.
 type ProjectAnalyticsTaskPayload struct {
 	OutboxEventID string          `json:"outboxEventId"`
@@ -129,5 +144,10 @@ func (m *Module) Rebuilder() *projection.Rebuilder {
 
 // Repo returns the underlying repository.
 func (m *Module) Repo() domain.Repository {
+	return m.repo
+}
+
+// AnalyticsSnapshotReader returns the sanctioned cross-module AnalyticsSnapshotReader interface per 10_backend_blueprint.md §6.
+func (m *Module) AnalyticsSnapshotReader() domain.AnalyticsSnapshotReader {
 	return m.repo
 }

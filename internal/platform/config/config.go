@@ -114,11 +114,17 @@ type AnalyticsConfig struct {
 }
 
 type EngagementConfig struct {
+	Provider              string        `yaml:"provider"` // "fonnte", "meta", "mock"
 	NotificationBatchSize int           `yaml:"notification_batch_size"`
 	DeliveryTimeout       time.Duration `yaml:"delivery_timeout"`
 	MaxDeliveryRetries    int           `yaml:"max_delivery_retries"`
+	FonnteBaseURL         string        `yaml:"fonnte_base_url"`
+	FonnteAPIToken        string        `yaml:"-"`
+	FonnteCountryCode     string        `yaml:"fonnte_country_code"`
 	WhatsAppToken         string        `yaml:"-"`
 	WhatsAppPhoneNumberID string        `yaml:"-"`
+	MetaAppSecret         string        `yaml:"-"`
+	MetaWebhookVerify     string        `yaml:"-"`
 }
 
 type AdministrationConfig struct {
@@ -225,6 +231,28 @@ func applyIngestionOverrides(cfg *Config) {
 	}
 	if cfg.Ingestion.HistoryFallbackLookbackDays <= 0 {
 		cfg.Ingestion.HistoryFallbackLookbackDays = 3 // Default 3 days per 12_gmail_connector.md §6.2
+	}
+
+	if tok := os.Getenv("FONNTE_API_TOKEN"); tok != "" {
+		cfg.Engagement.FonnteAPIToken = tok
+	}
+	if tok := os.Getenv("WHATSAPP_API_TOKEN"); tok != "" {
+		cfg.Engagement.WhatsAppToken = tok
+	}
+	if pid := os.Getenv("WHATSAPP_PHONE_NUMBER_ID"); pid != "" {
+		cfg.Engagement.WhatsAppPhoneNumberID = pid
+	}
+	if sec := os.Getenv("META_APP_SECRET"); sec != "" {
+		cfg.Engagement.MetaAppSecret = sec
+	}
+	if ver := os.Getenv("META_WEBHOOK_VERIFY_TOKEN"); ver != "" {
+		cfg.Engagement.MetaWebhookVerify = ver
+	}
+	if prov := os.Getenv("ENGAGEMENT_PROVIDER"); prov != "" {
+		cfg.Engagement.Provider = prov
+	}
+	if cfg.Engagement.Provider == "" {
+		cfg.Engagement.Provider = "fonnte"
 	}
 }
 

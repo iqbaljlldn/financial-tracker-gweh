@@ -354,6 +354,19 @@ class ApiClient {
     const qs = params.toString() ? '?' + params.toString() : '';
     return this.request('/analytics/trend' + qs, { method: 'GET' });
   }
+
+  // --- Notifications & WhatsApp (Engagement Module) ---
+  async getNotificationPreferences() {
+    return this.request('/notifications/preferences', { method: 'GET' });
+  }
+
+  async updateNotificationPreferences(data) {
+    return this.request('/notifications/preferences', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
 }
 
 export const apiClient = new ApiClient();
+

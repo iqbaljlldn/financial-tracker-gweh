@@ -11,73 +11,74 @@
 ## Checklist
 
 ### WhatsApp Provider Setup (Agnostic: Fonnte / Meta / Mock) **[GATE]**
-- [ ] Select and configure active provider in config (`engagement.provider: "fonnte"` | `"meta"` | `"mock"`)
-- [ ] If using **Fonnte**: Obtain API token from Fonnte dashboard, configure device pairing and webhook URL
-- [ ] If using **Meta**: Provision WhatsApp Business API account, configure phone number ID, and register templates (`daily_summary_v1`, `weekly_summary_v1`, `monthly_report_v1`, `budget_alert_v1`, `review_request_v1`)
-- [ ] If using **Mock**: Ensure test fixtures and in-memory mock client are ready for local zero-dependency testing
+- [x] Select and configure active provider in config (`engagement.provider: "fonnte"` | `"meta"` | `"mock"`)
+- [x] If using **Fonnte**: Obtain API token from Fonnte dashboard, configure device pairing and webhook URL
+- [x] If using **Meta**: Provision WhatsApp Business API account, configure phone number ID, and register templates (`daily_summary_v1`, `weekly_summary_v1`, `monthly_report_v1`, `budget_alert_v1`, `review_request_v1`)
+- [x] If using **Mock**: Ensure test fixtures and in-memory mock client are ready for local zero-dependency testing
 
 ### Engagement Module — Domain Layer
-- [ ] `domain/notification_job.go` — `NotificationJob` aggregate
-- [ ] `domain/repository.go` — `NotificationJobRepository`, `NotificationPreferenceRepository`
-- [ ] `domain/messaging_client.go` — `MessagingClient` port interface (`SendMessage`, `ProviderName`)
+- [x] `domain/notification_job.go` — `NotificationJob` aggregate
+- [x] `domain/repository.go` — `NotificationJobRepository`, `NotificationPreferenceRepository`
+- [x] `domain/messaging_client.go` — `MessagingClient` port interface (`SendMessage`, `ProviderName`)
 
 ### Preference Gate
-- [ ] `notification_preferences` check before any composition work begins
-- [ ] Opted-out → clean no-op, distinct from a delivery failure (for accurate dashboard reporting) **[GATE]**
+- [x] `notification_preferences` check before any composition work begins
+- [x] Opted-out → clean no-op, distinct from a delivery failure (for accurate dashboard reporting) **[GATE]**
 
 ### Content Composer & Template Renderer
-- [ ] Reads **exclusively** from Analytics read models, never `financialcore` directly **[GATE]**
-- [ ] Template selection & rendering engine:
+- [x] Reads **exclusively** from Analytics read models, never `financialcore` directly **[GATE]**
+- [x] Template selection & rendering engine:
   - Formats rich WhatsApp markdown (`*bold*`, `_italic_`, line breaks, currency formatting) for Fonnte/plain text
   - Formats parameterized placeholder payload for Meta Cloud API
-- [ ] Hard failure (not silent fallback) if a `notification_type` has no template/renderer configured
+- [x] Hard failure (not silent fallback) if a `notification_type` has no template/renderer configured
 
 ### WhatsApp Delivery Client (Agnostic Adapters)
-- [ ] `adapter/external/messaging/factory.go` — provider factory instantiating configured client
-- [ ] `adapter/external/messaging/fonnte/client.go` — Fonnte API (`POST https://api.fonnte.com/send`)
-- [ ] `adapter/external/messaging/meta/client.go` — Meta WhatsApp Cloud API
-- [ ] `adapter/external/messaging/mock/client.go` — In-memory test client with message recording
-- [ ] Rate-limit-aware sending against provider rate limits
-- [ ] Retry classification: transient vs. permanent (blocked number → terminal, disable preferences)
+- [x] `adapter/external/messaging/factory.go` — provider factory instantiating configured client
+- [x] `adapter/external/messaging/fonnte/client.go` — Fonnte API (`POST https://api.fonnte.com/send`)
+- [x] `adapter/external/messaging/meta/client.go` — Meta WhatsApp Cloud API
+- [x] `adapter/external/messaging/mock/client.go` — In-memory test client with message recording
+- [x] Rate-limit-aware sending against provider rate limits
+- [x] Retry classification: transient vs. permanent (blocked number → terminal, disable preferences)
 
 ### Constrained-Intent Reply Parsing (H4 Resolution) **[GATE — this touches the ledger, get it right]**
-- [ ] Inbound reply webhook handling supporting both Fonnte and Meta payload shapes:
+- [x] Inbound reply webhook handling supporting both Fonnte and Meta payload shapes:
   - Structured button reply (`Confirm`/`Edit`) — **no NLU**
   - Fallback: strict whitelisted text pattern matching (`^Y$`/`^N$`, `^YA$`/`^TIDAK$`)
-- [ ] `[Edit]` flow: bounded follow-up (amount/merchant/category button or key choice), never open text
-- [ ] Unrecognized reply → clarifying re-prompt, never silently misinterpreted
+- [x] `[Edit]` flow: bounded follow-up (amount/merchant/category button or key choice), never open text
+- [x] Unrecognized reply → clarifying re-prompt, never silently misinterpreted
 
 ### Two-Tier Delivery Confirmation
-- [ ] `POST /webhooks/whatsapp/delivery-status` handler (or provider-specific webhook routers)
-- [ ] Tracks `provider_accepted` / `delivered` / `read` separately based on provider callbacks
-- [ ] `read` tier never used as a functional gate anywhere — observability only **[GATE]**
+- [x] `POST /webhooks/whatsapp/delivery-status` handler (or provider-specific webhook routers)
+- [x] Tracks `provider_accepted` / `delivered` / `read` separately based on provider callbacks
+- [x] `read` tier never used as a functional gate anywhere — observability only **[GATE]**
 
 ### Scheduled Notifications
-- [ ] Daily/weekly/monthly summary scheduling, timezone-aware per user
-- [ ] `ComposeBudgetAlertNotification` wired to Sprint 7's `BudgetThresholdCrossed`
-- [ ] `ComposeReviewRequestNotification` wired to Sprint 6's `FinancialEventPendingReview`
+- [x] Daily/weekly/monthly summary scheduling, timezone-aware per user
+- [x] `ComposeBudgetAlertNotification` wired to Sprint 7's `BudgetThresholdCrossed`
+- [x] `ComposeReviewRequestNotification` wired to Sprint 6's `FinancialEventPendingReview`
 
 ### Quality & Rate Governance
-- [ ] `engagement:deliver` queue rate-limited to configured provider tier
-- [ ] Metrics: `engagement_notifications_composed_total`, `engagement_delivery_outcome_total`, `engagement_whatsapp_block_rate`, `engagement_reply_parse_outcome_total` (`17_observability.md` §4.6)
+- [x] `engagement:deliver` queue rate-limited to configured provider tier
+- [x] Metrics: `engagement_notifications_composed_total`, `engagement_delivery_outcome_total`, `engagement_whatsapp_block_rate`, `engagement_reply_parse_outcome_total` (`17_observability.md` §4.6)
 
 ### Frontend (Parallel Track)
-- [ ] Notification preferences screen: toggle each `notification_type` independently (`GET/PATCH /notifications/preferences`)
-- [ ] Confirmation that a toggle off for one type never affects others (visible in the UI state, matching the backend guarantee)
+- [x] Notification preferences screen: toggle each `notification_type` independently (`GET/PATCH /notifications/preferences`)
+- [x] Confirmation that a toggle off for one type never affects others (visible in the UI state, matching the backend guarantee)
 - [ ] (Optional, [DEFER-OK]) In-app notification history view, mirroring what was sent via WhatsApp, for users who want a web-based record
 
 ### Testing
-- [ ] Unit & contract tests for `FonnteClient`, `MetaClient`, and `MockClient`
-- [ ] Integration test: Diagram 7 — delivery retry on transient failure, eventual success
-- [ ] Integration test: button-reply confirmation flow end to end (finalizes `pending_review` event in ledger)
-- [ ] Integration test: text-pattern fallback flow (`Y`/`N`)
-- [ ] Fixture-based webhook parsing test for both Fonnte and Meta payloads
+- [x] Unit & contract tests for `FonnteClient`, `MetaClient`, and `MockClient`
+- [x] Integration test: Diagram 7 — delivery retry on transient failure, eventual success
+- [x] Integration test: button-reply confirmation flow end to end (finalizes `pending_review` event in ledger)
+- [x] Integration test: text-pattern fallback flow (`Y`/`N`)
+- [x] Fixture-based webhook parsing test for both Fonnte and Meta payloads
 
 ---
 
 ## Exit Criteria
 
-- [ ] A real (or sandbox/Fonnte/Mock) WhatsApp number receives a correctly composed daily summary
-- [ ] Confirming a pending-review event via button/text reply correctly finalizes it in the ledger
-- [ ] Switching provider between Fonnte, Meta, or Mock requires only config changes without touching domain code
-- [ ] Opting out of one notification type verifiably leaves others unaffected
+- [x] A real (or sandbox/Fonnte/Mock) WhatsApp number receives a correctly composed daily summary
+- [x] Confirming a pending-review event via button/text reply correctly finalizes it in the ledger
+- [x] Switching provider between Fonnte, Meta, or Mock requires only config changes without touching domain code
+- [x] Opting out of one notification type verifiably leaves others unaffected
+

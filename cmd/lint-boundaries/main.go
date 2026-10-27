@@ -164,6 +164,9 @@ var sanctionedCrossModuleImports = map[string]map[string]bool{
 	"ingestion": {
 		"identity": true, // TokenProvider (10_backend_blueprint.md §6)
 	},
+	"engagement": {
+		"analytics": true, // AnalyticsSnapshotReader (10_backend_blueprint.md §6)
+	},
 }
 
 func checkCrossModule(filePath string, line int, importPath, callerModule, targetModule, targetLayer string) *Violation {
