@@ -125,8 +125,9 @@ func (c *GmailClient) InitialSync(
 	}
 	afterDate := time.Now().UTC().AddDate(0, 0, -windowDays).Format("2006/01/02")
 
-	// Pre-filter query: transactional keywords OR known financial domains, bounded to afterDate
-	queryFilter := fmt.Sprintf("(from:(*stripe* OR *paypal* OR *google* OR *apple* OR *amazon* OR *uber* OR *grab* OR *gojek* OR *tokopedia* OR *shopee* OR *bank* OR *receipt* OR *invoice*) OR (receipt OR invoice OR bill OR payment OR charged OR paid OR transfer OR subscription OR struk OR tagihan OR transaksi)) after:%s", afterDate)
+	// Pre-filter query: transactional keywords OR known financial domains, bounded to afterDate,
+	// excluding obvious non-transactional subjects (OTP, verification, login alert, support tickets)
+	queryFilter := fmt.Sprintf("(from:(*stripe* OR *paypal* OR *google* OR *apple* OR *amazon* OR *uber* OR *grab* OR *gojek* OR *tokopedia* OR *shopee* OR *bank* OR *receipt* OR *invoice*) OR (receipt OR invoice OR bill OR payment OR charged OR paid OR transfer OR subscription OR struk OR tagihan OR transaksi)) -subject:(otp OR verifikasi OR verification OR \"reset password\" OR \"welcome to\" OR \"selamat datang\" OR \"security alert\" OR \"login baru\" OR \"ticket #\" OR \"tiket\") after:%s", afterDate)
 
 	endpoint := fmt.Sprintf("%s/me/messages?q=%s&maxResults=50", c.baseURL, url.QueryEscape(queryFilter))
 	if pageToken != "" {

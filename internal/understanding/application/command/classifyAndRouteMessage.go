@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/hibiken/asynq"
+	"github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding/application/classifier"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding/application/executor"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding/domain"
 )
@@ -33,7 +34,7 @@ type ClassifyAndRouteMessageCommand struct {
 
 // ClassifyAndRouteMessageResult represents the routing decision outcome.
 type ClassifyAndRouteMessageResult struct {
-	Route      string `json:"route"` // "template_parser" | "ai_extractor"
+	Route      string `json:"route"` // "template_parser" | "ai_extractor" | "discarded"
 	TemplateID string `json:"templateId,omitempty"`
 }
 
@@ -112,7 +113,20 @@ func (h *ClassifyAndRouteMessageHandler) Handle(
 		}, nil
 	}
 
-	// 2. Unknown sender -> routes to AI extractor fallback queue (11_ai_blueprint.md / Diagram 4)
+	// 2. Unknown sender: evaluate transactional-content heuristic per 12_gmail_connector.md §7.1 [GATE]
+	if isNonTransactional, reason := classifier.EvaluateTransactionalContent(cmd.RawEmail); isNonTransactional {
+		h.logger.Info("non-transactional email discarded by heuristic",
+			slog.String("sender", cmd.RawEmail.Sender),
+			slog.String("subject", cmd.RawEmail.Subject),
+			slog.String("messageId", cmd.MessageID),
+			slog.String("reason", reason),
+		)
+		return &ClassifyAndRouteMessageResult{
+			Route: "discarded",
+		}, nil
+	}
+
+	// 3. Positive or ambiguous transactional heuristic -> routes to AI extractor fallback queue (11_ai_blueprint.md / Diagram 4)
 	h.logger.Info("unknown sender: routing to AI extractor fallback queue",
 		slog.String("sender", cmd.RawEmail.Sender),
 		slog.String("messageId", cmd.MessageID),

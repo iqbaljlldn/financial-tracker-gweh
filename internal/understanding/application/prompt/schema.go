@@ -25,8 +25,9 @@ var codeFenceRegex = regexp.MustCompile(`(?s)^` + "```" + `(?:json)?\s*([\s\S]*?
 
 // RawAIExtractionOutput defines the structured JSON contract produced by LLM extraction (11_ai_blueprint.md §5).
 type RawAIExtractionOutput struct {
-	EventType string `json:"eventType"`
-	Amount    struct {
+	IsFinancialTransaction *bool  `json:"isFinancialTransaction,omitempty"`
+	EventType              string `json:"eventType"`
+	Amount                 struct {
 		Value      any     `json:"value"` // can be string ("45.00") or float64 (45.00)
 		Currency   string  `json:"currency"`
 		Confidence float64 `json:"confidence"`
@@ -68,6 +69,16 @@ func ValidateRawOutput(rawJSON string) (*RawAIExtractionOutput, error) {
 	var output RawAIExtractionOutput
 	if err := json.Unmarshal([]byte(cleaned), &output); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidJSON, err)
+	}
+
+	// Non-transaction email recognized by LLM
+	if output.IsFinancialTransaction != nil && !*output.IsFinancialTransaction {
+		return &output, nil
+	}
+	if strings.EqualFold(output.EventType, "None") || strings.EqualFold(output.EventType, "NonTransaction") {
+		f := false
+		output.IsFinancialTransaction = &f
+		return &output, nil
 	}
 
 	if strings.TrimSpace(output.EventType) == "" {

@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/platform/observability"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding/application/categorization"
+	"github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding/application/classifier"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding/application/governance"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding/application/prompt"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/understanding/application/sanitizer"
@@ -148,6 +149,22 @@ func (h *InvokeAIExtractorHandler) Handle(
 			return valRes.errResult, nil
 		}
 		return nil, err
+	}
+
+	// Check if AI explicitly determined this email is not a financial transaction
+	if (valRes.rawOutput.IsFinancialTransaction != nil && !*valRes.rawOutput.IsFinancialTransaction) ||
+		strings.EqualFold(valRes.rawOutput.EventType, "None") {
+		h.logger.Info("AI extraction identified email as non-transaction, discarding without creating candidate",
+			slog.String("messageId", cmd.MessageID),
+			slog.String("sender", cmd.RawEmail.Sender),
+			slog.String("notes", valRes.rawOutput.ExtractionNotes),
+		)
+		return &InvokeAIExtractorResult{
+			Outcome:             "non_transaction_discarded",
+			ExtractionResultID:  resultID,
+			ConfidenceAggregate: 0.0,
+			Candidate:           nil,
+		}, nil
 	}
 
 	// 5. Confidence, Categorization & Candidate Event Assembly (11_ai_blueprint.md §6.2, §7, 04_domain_model.md §7.2)
@@ -406,6 +423,23 @@ func (h *InvokeAIExtractorHandler) handleSchemaInvalid(
 	sender := strings.TrimSpace(cmd.RawEmail.Sender)
 	if sender == "" {
 		sender = "Unknown Sender"
+	}
+
+	// If the email is clearly non-transactional per heuristics, discard cleanly without creating a fake ledger candidate
+	if isNonTransactional, reason := classifier.EvaluateTransactionalContent(cmd.RawEmail); isNonTransactional {
+		h.logger.Info("schema invalid on clearly non-transactional email, discarding without candidate",
+			slog.String("messageId", cmd.MessageID),
+			slog.String("sender", cmd.RawEmail.Sender),
+			slog.String("subject", cmd.RawEmail.Subject),
+			slog.String("reason", reason),
+		)
+		return &InvokeAIExtractorResult{
+			Outcome:             OutcomeSchemaInvalid,
+			ExtractionResultID:  resultID,
+			ConfidenceAggregate: 0.0,
+			Candidate:           nil,
+			ErrorMessage:        errDetail,
+		}, nil
 	}
 
 	// Create low-confidence candidate (confidence 0.0) routing to manual review queue (Diagram 4)

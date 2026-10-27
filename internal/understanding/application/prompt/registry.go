@@ -97,10 +97,12 @@ CONFIDENCE RUBRIC:
 RULES:
 - Return ONLY valid JSON matching the exact schema. Do not output markdown fences or explanatory text.
 - If a field is not present or cannot be determined with confidence, use null or omit it. Never fabricate data.
-- Event types allowed: "Income", "Salary", "Dividend", "Expense", "Transfer", "Refund", "Cashback", "SubscriptionRenewal", "FailedPayment", "Investment", "Loan", "CreditCardBill", "Tax", "Donation", "Others".
+- Event types allowed: "Income", "Salary", "Dividend", "Expense", "Transfer", "Refund", "Cashback", "SubscriptionRenewal", "FailedPayment", "Investment", "Loan", "CreditCardBill", "Tax", "Donation", "Others", "None".
+- NON-TRANSACTION EMAILS: If the email does NOT represent a financial transaction (e.g. it is an account notification, welcome email, OTP/verification code, password reset, support ticket, newsletter, or marketing email without payment), set "isFinancialTransaction": false and "eventType": "None". NEVER fabricate dummy amounts or transactions for non-financial emails.
 - Explain any uncertainty or ambiguity in the "extractionNotes" field.`,
 
 		SchemaDefinition: `{
+  "isFinancialTransaction": true,
   "eventType": "Expense",
   "amount": { "value": "45.00", "currency": "USD", "confidence": 0.95 },
   "occurredAt": { "value": "2026-08-03T14:22:00Z", "confidence": 0.90 },
@@ -119,6 +121,7 @@ Payment method: Visa ending in 4821
 Date: Aug 3, 2026 14:22 UTC
 Shipped to: Seattle, WA`,
 				TargetJSON: `{
+  "isFinancialTransaction": true,
   "eventType": "Expense",
   "amount": { "value": "45.00", "currency": "USD", "confidence": 0.98 },
   "occurredAt": { "value": "2026-08-03T14:22:00Z", "confidence": 0.95 },
@@ -137,6 +140,7 @@ Metode Pembayaran: Saldo GoPay
 Waktu: 2026-08-04 10:15:00 WIB
 Merchant: Kopi Kenangan`,
 				TargetJSON: `{
+  "isFinancialTransaction": true,
   "eventType": "Expense",
   "amount": { "value": "25000", "currency": "IDR", "confidence": 0.99 },
   "occurredAt": { "value": "2026-08-04T03:15:00Z", "confidence": 0.95 },
@@ -145,6 +149,19 @@ Merchant: Kopi Kenangan`,
   "categoryHint": { "value": "Food & Beverage", "confidence": 0.85 },
   "typeSpecificPayload": {},
   "extractionNotes": "Indonesian e-wallet transaction receipt."
+}`,
+			},
+			{
+				EmailContent: `From: No Reply Fonnte <noreply@fonnte.com>
+Subject: Pendaftaran Akun Fonnte Berhasil
+Halo Iqbal,
+Selamat datang di Fonnte. Akun Anda berhasil terdaftar.
+Silakan login ke dashboard untuk menghubungkan perangkat WhatsApp Anda.
+Jika Anda tidak melakukan pendaftaran ini, silakan abaikan email ini.`,
+				TargetJSON: `{
+  "isFinancialTransaction": false,
+  "eventType": "None",
+  "extractionNotes": "Account registration welcome email. No financial transaction or payment occurred."
 }`,
 			},
 		},
