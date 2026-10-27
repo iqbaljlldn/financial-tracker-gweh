@@ -24,6 +24,7 @@ import GmailAccountsView from './GmailAccountsView';
 import { ParserMonitoringView } from './ParserMonitoringView';
 import { LedgerView } from './LedgerView';
 import { BudgetView } from './BudgetView';
+import AnalyticsView from './AnalyticsView';
 
 export default function AppShell() {
   const { user, logout, refreshProfile } = useAuth();
@@ -417,22 +418,7 @@ export default function AppShell() {
 
           {activeTab === 'budgets' && <BudgetView />}
 
-          {activeTab === 'analytics' && (
-            <div>
-              <div style={{ marginBottom: '24px' }}>
-                <h1 style={{ fontSize: '24px', marginBottom: '6px' }}>CQRS Analytics Projection</h1>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-                  Read side backed by schema-isolated <code>analytics.*</code> tables and <code>projection_checkpoint</code>.
-                </p>
-              </div>
-
-              <div className="glass-card" style={{ padding: '24px' }}>
-                <p style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
-                  Analytics projections will activate in Sprint 5, processing events emitted via the outbox relay.
-                </p>
-              </div>
-            </div>
-          )}
+          {activeTab === 'analytics' && <AnalyticsView />}
 
           {activeTab === 'audit' && (
             <div>

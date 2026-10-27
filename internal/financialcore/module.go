@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -190,6 +191,7 @@ func (m *Module) pollOutbox(ctx context.Context) {
 
 	ids := make([]pgtype.UUID, 0, len(rows))
 	for _, row := range rows {
+		// Relay to Budget evaluation if Finalized Expense
 		if row.EventType == domain.EventFinancialEventFinalized {
 			var payload domain.FinancialEventFinalizedPayload
 			if err := json.Unmarshal(row.Payload, &payload); err == nil {
@@ -207,6 +209,24 @@ func (m *Module) pollOutbox(ctx context.Context) {
 				}
 			}
 		}
+
+		// Relay to Analytics projection read models
+		if row.EventType == domain.EventFinancialEventFinalized ||
+			row.EventType == domain.EventFinancialEventOverridden ||
+			row.EventType == domain.EventFinancialEventArchived ||
+			row.EventType == domain.EventCategoryAssignmentChanged {
+			if m.asynqClient != nil {
+				analyticsPayload, _ := json.Marshal(map[string]any{
+					"outboxEventId": uuid.UUID(row.ID.Bytes).String(),
+					"eventType":     row.EventType,
+					"payload":       json.RawMessage(row.Payload),
+					"createdAt":     row.CreatedAt.Time,
+				})
+				task := asynq.NewTask(taskserver.TaskProjectAnalytics, analyticsPayload)
+				_, _ = m.asynqClient.Enqueue(task, asynq.Queue(taskserver.QueueAnalyticsProject))
+			}
+		}
+
 		ids = append(ids, row.ID)
 	}
 

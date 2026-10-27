@@ -254,6 +254,11 @@ func (c *TestCleaner) CleanupNow() {
 
 	// 8. Users
 	for userID := range c.userIDs {
+		_, _ = pool.Exec(ctx, "DELETE FROM analytics.cash_flow_view WHERE user_id = $1::uuid", userID)
+		_, _ = pool.Exec(ctx, "DELETE FROM analytics.category_breakdown_view WHERE user_id = $1::uuid", userID)
+		_, _ = pool.Exec(ctx, "DELETE FROM analytics.merchant_ranking_view WHERE user_id = $1::uuid", userID)
+		_, _ = pool.Exec(ctx, "DELETE FROM analytics.trend_view WHERE user_id = $1::uuid", userID)
+		_, _ = pool.Exec(ctx, "DELETE FROM analytics.projected_events WHERE user_id = $1::uuid", userID)
 		_, _ = pool.Exec(ctx, "DELETE FROM budget.budget_fired_alerts WHERE budget_id IN (SELECT id FROM budget.budgets WHERE user_id = $1::uuid)", userID)
 		_, _ = pool.Exec(ctx, "DELETE FROM budget.outbox_events WHERE aggregate_id IN (SELECT id FROM budget.budgets WHERE user_id = $1::uuid) OR aggregate_id IN (SELECT id FROM budget.savings_goals WHERE user_id = $1::uuid)", userID)
 		_, _ = pool.Exec(ctx, "DELETE FROM budget.budgets WHERE user_id = $1::uuid", userID)
@@ -276,6 +281,11 @@ func (c *TestCleaner) CleanupNow() {
 
 	// 9. Safety sweep: purge any test events or extractions that were orphaned
 	_, _ = pool.Exec(ctx, `
+		DELETE FROM analytics.cash_flow_view WHERE user_id NOT IN (SELECT id FROM identity.users);
+		DELETE FROM analytics.category_breakdown_view WHERE user_id NOT IN (SELECT id FROM identity.users);
+		DELETE FROM analytics.merchant_ranking_view WHERE user_id NOT IN (SELECT id FROM identity.users);
+		DELETE FROM analytics.trend_view WHERE user_id NOT IN (SELECT id FROM identity.users);
+		DELETE FROM analytics.projected_events WHERE user_id NOT IN (SELECT id FROM identity.users);
 		DELETE FROM financialcore.category_assignments WHERE financial_event_id IN (
 			SELECT id FROM financialcore.financial_events WHERE user_id NOT IN (SELECT id FROM identity.users)
 		);

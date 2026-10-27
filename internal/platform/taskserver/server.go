@@ -50,6 +50,11 @@ const (
 	TaskEvaluateBudgetImpact = "budget:evaluate_impact"
 )
 
+// Task names for Analytics module.
+const (
+	TaskProjectAnalytics = "analytics:project_read_models"
+)
+
 // DefaultQueueWeights provides standard priority weighting per 06_architecture.md §6.3.
 var DefaultQueueWeights = map[string]int{
 	QueueIngestionCritical:     6,

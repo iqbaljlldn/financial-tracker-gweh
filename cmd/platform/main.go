@@ -18,6 +18,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/iqbaljlldn/financial-tracker-gweh/internal/analytics"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/budget"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/financialcore"
 	fcCmd "github.com/iqbaljlldn/financial-tracker-gweh/internal/financialcore/application/command"
@@ -305,12 +306,18 @@ func runAPI(ctx context.Context, logger *slog.Logger) {
 		os.Exit(1)
 	}
 
-	// Mount Identity, Ingestion, Understanding, FinancialCore, and Budget routes
+	analyticsMod := analytics.NewModule(analytics.ModuleConfig{
+		DBPool:         dbPool,
+		SessionManager: sessionManager,
+	})
+
+	// Mount Identity, Ingestion, Understanding, FinancialCore, Budget, and Analytics routes
 	identityMod.RegisterHTTPRoutes(server.Router())
 	ingestionMod.RegisterHTTPRoutes(server.Router())
 	understandingMod.RegisterHTTPRoutes(server.Router())
 	financialcoreMod.RegisterHTTPRoutes(server.Router())
 	budgetMod.RegisterHTTPRoutes(server.Router())
+	analyticsMod.RegisterHTTPRoutes(server.Router())
 
 	serverErr := make(chan error, 1)
 	go func() {
@@ -434,6 +441,11 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 		os.Exit(1)
 	}
 
+	analyticsMod := analytics.NewModule(analytics.ModuleConfig{
+		DBPool:         dbPool,
+		SessionManager: sessionManager,
+	})
+
 	// Start Ingestion Outbox Relay
 	if err := ingestionMod.StartOutboxRelay(ctx); err != nil {
 		logger.Error("failed to start ingestion outbox relay", slog.String("error", err.Error()))
@@ -474,7 +486,7 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 	}
 
 	mux := asynq.NewServeMux()
-	registerWorkerTaskHandlers(mux, ingestionMod, understandingMod, financialcoreMod, budgetMod, logger)
+	registerWorkerTaskHandlers(mux, ingestionMod, understandingMod, financialcoreMod, budgetMod, analyticsMod, logger)
 
 	// Periodic watch renewal and parser metrics background loop
 	go func() {
@@ -516,6 +528,7 @@ func registerWorkerTaskHandlers(
 	understandingMod *understanding.Module,
 	financialcoreMod *financialcore.Module,
 	budgetMod *budget.Module,
+	analyticsMod *analytics.Module,
 	logger *slog.Logger,
 ) {
 	mux.HandleFunc(taskserver.TaskStartInitialFullSync, func(ctx context.Context, t *asynq.Task) error {
@@ -650,4 +663,5 @@ func registerWorkerTaskHandlers(
 	understandingMod.RegisterWorkerTasks(mux)
 	financialcoreMod.RegisterWorkerTasks(mux)
 	budgetMod.RegisterWorkerTasks(mux)
+	analyticsMod.RegisterWorkerTasks(mux)
 }

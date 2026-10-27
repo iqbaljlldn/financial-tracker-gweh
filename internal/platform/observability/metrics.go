@@ -47,6 +47,11 @@ type Metrics struct {
 	// Budget Module Metrics (§4.4)
 	BudgetThresholdCrossedTotal     *prometheus.CounterVec
 	BudgetEvaluationDurationSeconds prometheus.Histogram
+
+	// Analytics Module Metrics (§4.5)
+	AnalyticsProjectionLagSeconds           *prometheus.HistogramVec
+	AnalyticsProjectionCheckpointAgeSeconds *prometheus.GaugeVec
+	AnalyticsQueryDurationSeconds           *prometheus.HistogramVec
 }
 
 var defaultMetrics *Metrics
@@ -261,6 +266,32 @@ func InitMetrics() *Metrics {
 				Buckets: prometheus.DefBuckets,
 			},
 		),
+
+		AnalyticsProjectionLagSeconds: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "analytics_projection_lag_seconds",
+				Help:    "Lag in seconds between event occurrence/finalization and read-model projection update.",
+				Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30, 60, 120, 300},
+			},
+			[]string{"view_name"},
+		),
+
+		AnalyticsProjectionCheckpointAgeSeconds: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "analytics_projection_checkpoint_age_seconds",
+				Help: "Age in seconds of the latest processed checkpoint per source module.",
+			},
+			[]string{"source_module"},
+		),
+
+		AnalyticsQueryDurationSeconds: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "analytics_query_duration_seconds",
+				Help:    "Duration in seconds of analytics query handler execution per endpoint.",
+				Buckets: prometheus.DefBuckets,
+			},
+			[]string{"endpoint"},
+		),
 	}
 
 	reg.MustRegister(
@@ -290,6 +321,9 @@ func InitMetrics() *Metrics {
 		m.FinancialCoreDedupConflictTotal,
 		m.BudgetThresholdCrossedTotal,
 		m.BudgetEvaluationDurationSeconds,
+		m.AnalyticsProjectionLagSeconds,
+		m.AnalyticsProjectionCheckpointAgeSeconds,
+		m.AnalyticsQueryDurationSeconds,
 	)
 
 	defaultMetrics = m

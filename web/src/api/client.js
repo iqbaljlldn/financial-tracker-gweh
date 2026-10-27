@@ -314,6 +314,46 @@ class ApiClient {
   async deleteSavingsGoal(id) {
     return this.request(`/savings-goals/${id}`, { method: 'DELETE' });
   }
+
+  // --- Analytics (CQRS Read Models) ---
+  async getCashFlow({ granularity, from, to, currency } = {}) {
+    const params = new URLSearchParams();
+    if (granularity) params.set('granularity', granularity);
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    if (currency) params.set('currency', currency);
+    const qs = params.toString() ? '?' + params.toString() : '';
+    return this.request('/analytics/cash-flow' + qs, { method: 'GET' });
+  }
+
+  async getCategoryBreakdown({ from, to, currency } = {}) {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    if (currency) params.set('currency', currency);
+    const qs = params.toString() ? '?' + params.toString() : '';
+    return this.request('/analytics/category-breakdown' + qs, { method: 'GET' });
+  }
+
+  async getMerchantRanking({ from, to, currency, limit } = {}) {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    if (currency) params.set('currency', currency);
+    if (limit) params.set('limit', limit);
+    const qs = params.toString() ? '?' + params.toString() : '';
+    return this.request('/analytics/merchant-ranking' + qs, { method: 'GET' });
+  }
+
+  async getTrend({ granularity, from, to, currency } = {}) {
+    const params = new URLSearchParams();
+    if (granularity) params.set('granularity', granularity);
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    if (currency) params.set('currency', currency);
+    const qs = params.toString() ? '?' + params.toString() : '';
+    return this.request('/analytics/trend' + qs, { method: 'GET' });
+  }
 }
 
 export const apiClient = new ApiClient();
