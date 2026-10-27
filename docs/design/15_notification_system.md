@@ -53,13 +53,13 @@ Trigger (scheduled: daily/weekly/monthly; or event-driven: BudgetThresholdCrosse
 └──────────────┬───────────────┘
                ▼
 ┌─────────────────────────────┐
-│  Template Renderer              │  ← fills approved template
-│                               │    placeholders with composed values
+│  Template Renderer              │  ← fills template placeholders with
+│                               │    composed values (Markdown/HSM)
 └──────────────┬───────────────┘
                ▼
 ┌─────────────────────────────┐
-│  WhatsApp Delivery Client        │  ← sends via Business API,
-│                               │    handles rate limits/retries
+│  Messaging Client (Port)        │  ← Agnostic Interface:
+│  [Fonnte | Meta | Mock]         │    handles rate limits/retries
 └──────────────┬───────────────┘
                ▼
      [provider-accepted] ──▶ [delivered] ──▶ [read] (webhook-driven,
@@ -68,36 +68,105 @@ Trigger (scheduled: daily/weekly/monthly; or event-driven: BudgetThresholdCrosse
 
 ---
 
-## 4. WhatsApp Business API Integration Model
+## 4. Platform-Agnostic Messaging Architecture & Provider Integration
 
-### 4.1 Session vs. Template Messaging
+### 4.1 Hexagonal Design: The `MessagingClient` Port
 
-WhatsApp Business API distinguishes two messaging modes:
-- **Session (free-form) messages:** Permitted only within a 24-hour window after the end-user last messaged the business — i.e., only in direct reply to something the user sent.
-- **Template (business-initiated) messages:** Required for **any** message the platform sends proactively (daily/weekly/monthly summaries, budget alerts, review requests) since these are not replies to a recent user message. Every distinct template must be **pre-submitted to and approved by WhatsApp** before use.
+To prevent vendor lock-in (`01_product_vision.md` Section 6.2) and eliminate operational blockers like Meta WhatsApp Business account verification delays, the Engagement module employs a strict **Hexagonal Architecture (Ports and Adapters)** pattern.
 
-**This is the direct, binding source of Hotspot H7** (`05_event_storming.md`): nearly all of this platform's notification types (Section 4.10 of `02_product_requirement_document.md`) are proactive by nature, meaning the *entire* notification catalog must be built around a small set of pre-approved, placeholder-parameterized templates — dynamic natural-language composition (as an LLM might otherwise produce) is **not usable** for the actual delivered message content; it can only inform which pre-approved template and which placeholder values are selected.
+The domain defines a provider-agnostic port:
 
-### 4.2 Resolving H7: Template Catalog Design
+```go
+type OutboundMessage struct {
+    RecipientPhone   string            // E.164 formatted or local Indonesian format (e.g., 08xxx / 628xxx)
+    NotificationType NotificationType  // daily_summary, budget_alert, review_request, etc.
+    TemplateID       string            // e.g., daily_summary_v1
+    Parameters       map[string]string // placeholder variables: totalSpendYesterday, topCategory, etc.
+    RenderedText     string            // WhatsApp markdown rendered text (for Fonnte / plaintext)
+    Buttons          []ActionButton    // Quick action buttons (Confirm / Edit)
+}
 
-The platform maintains a small, deliberately curated set of **approved WhatsApp message templates**, each corresponding to exactly one `notification_type` (per `08_database_design.md` Section 12.1) or, for content-shape variants, a small number of templates per type:
+type ActionButton struct {
+    ID    string // e.g. "confirm:event_uuid"
+    Label string // e.g. "Confirm"
+}
 
-| Template ID (illustrative) | `notification_type` | Placeholder Slots |
-|---|---|---|
-| `daily_summary_v1` | `daily_summary` | `{{totalSpendYesterday}}`, `{{topCategory}}`, `{{eventCount}}` |
-| `weekly_summary_v1` | `weekly_summary` | `{{totalIncome}}`, `{{totalExpense}}`, `{{topCategory}}`, `{{topMerchant}}` |
-| `monthly_report_v1` | `monthly_report` | `{{netFlow}}`, `{{budgetPerformancePercent}}`, `{{comparisonToLastMonth}}` |
-| `budget_alert_v1` | `budget_alert` | `{{categoryOrGlobal}}`, `{{percentUsed}}`, `{{thresholdAmount}}` |
-| `review_request_v1` | `review_request` | `{{amount}}`, `{{merchant}}`, `{{suggestedCategory}}` — includes WhatsApp **interactive reply buttons** (`Confirm` / `Edit`), not free-text prompt, per Section 6 |
+type SendResult struct {
+    ProviderMessageID string
+    Status            DeliveryStatus   // accepted, delivered, failed
+    Provider          string           // "fonnte", "meta", "mock"
+}
 
-**The Content Composer (Section 3) selects a template ID based on `notification_type` and available data shape** — it never attempts to construct novel message text. If a genuinely new notification concept is needed (e.g., a future `ai_recommendation` message, per Phase 3), a **new template must be submitted for WhatsApp approval before that feature can ship** — this is an explicit, documented lead-time dependency that must be accounted for in feature planning (`24_future_roadmap.md`), not discovered late in a sprint.
+type MessagingClient interface {
+    SendMessage(ctx context.Context, msg OutboundMessage) (*SendResult, error)
+    ProviderName() string
+}
+```
 
-### 4.3 Template Approval Request Process
+The active provider is chosen dynamically at startup via configuration:
+```yaml
+engagement:
+  provider: "fonnte" # "fonnte" | "meta" | "mock"
+  fonnte:
+    base_url: "https://api.fonnte.com"
+    api_token: "${FONNTE_API_TOKEN}"
+    country_code: "62"
+  meta:
+    phone_number_id: "${META_PHONE_NUMBER_ID}"
+    access_token: "${META_ACCESS_TOKEN}"
+    app_secret: "${META_APP_SECRET}"
+    webhook_verify_token: "${META_WEBHOOK_VERIFY_TOKEN}"
+```
 
-1. Draft the template content and placeholder structure, following WhatsApp's category classification (`UTILITY`, `MARKETING`, `AUTHENTICATION` — this platform's notifications are `UTILITY` category, which has more favorable approval odds and lower cost than `MARKETING`).
-2. Submit via the WhatsApp Business Manager / API for review (typically hours to a few days turnaround, not instantaneous — an operational planning constraint).
-3. Upon approval, the template's provider-assigned identifier is recorded in the platform's template catalog configuration (Viper-managed, per `06_architecture.md` Section 9), mapping the platform's internal `notification_type` → provider template ID.
-4. Rejected templates (WhatsApp may reject for policy reasons — overly promotional phrasing, unclear placeholder context) require revision and resubmission — the Content Composer must never assume a template is available until this loop confirms approval, hence the explicit lead-time dependency noted above.
+### 4.2 Supported Providers
+
+#### 1. Fonnte (`fonnte`) — Primary / Recommended
+- **Overview:** Popular WhatsApp API Gateway in Indonesia, ideal for indie developers and production deployments without cumbersome enterprise business verification.
+- **Dispatch Endpoint:** `POST https://api.fonnte.com/send`
+- **Authentication:** `Authorization: <token>` HTTP header.
+- **Payload Structure:**
+  ```json
+  {
+    "target": "628123456789",
+    "message": "*Ringkasan Harian Keuangan*\n\nTotal pengeluaran kemarin: *Rp 150.000*...",
+    "button": "[{\"id\":\"confirm:uuid\",\"text\":\"Confirm\"},{\"id\":\"edit:uuid\",\"text\":\"Edit\"}]",
+    "countryCode": "62"
+  }
+  ```
+- **Key Operational Advantage:** Does **not** require waiting for Meta's manual template approval process (resolves Hotspot H7 operational friction immediately). Messages are formatted locally with WhatsApp native markdown (`*bold*`, `_italic_`, emojis, lists).
+- **Inbound Webhook (`POST /webhooks/whatsapp/fonnte`):**
+  Fonnte pushes incoming replies directly:
+  ```json
+  {
+    "sender": "628123456789",
+    "message": "Confirm",
+    "button": "{\"id\":\"confirm:uuid\"}",
+    "id": "msg_xyz123"
+  }
+  ```
+
+#### 2. Meta WhatsApp Cloud API (`meta`) — Enterprise Official
+- **Overview:** Official Meta Graph API (`https://graph.facebook.com/v20.0/{phone_number_id}/messages`).
+- **Authentication:** Bearer token + Webhook signature verification (`X-Hub-Signature-256`).
+- **Constraint:** Requires pre-approved HSM templates for proactive business-initiated messages (`UTILITY` category), and adherence to 24-hour customer service windows for free-form replies.
+
+#### 3. Mock Client (`mock`) — Testing & CI
+- **Overview:** Deterministic in-memory client that records sent messages and allows simulating delivery status and reply webhooks without external network dependencies.
+
+### 4.3 Template Catalog & Markdown Rendering
+
+The platform maintains a standardized catalog mapping `notification_type` to message shapes:
+
+| Template ID | `notification_type` | Placeholder Slots | Rich Markdown Representation |
+|---|---|---|---|
+| `daily_summary_v1` | `daily_summary` | `totalSpendYesterday`, `topCategory`, `eventCount` | `📊 *Ringkasan Harian*\nPengeluaran kemarin: *{{totalSpendYesterday}}*...` |
+| `weekly_summary_v1` | `weekly_summary` | `totalIncome`, `totalExpense`, `topCategory`, `topMerchant` | `📈 *Laporan Mingguan*\nPemasukan: *{{totalIncome}}*\nPengeluaran: *{{totalExpense}}*...` |
+| `monthly_report_v1` | `monthly_report` | `netFlow`, `budgetPerformancePercent`, `comparisonToLastMonth` | `📅 *Evaluasi Bulanan*\nNet Flow: *{{netFlow}}*...` |
+| `budget_alert_v1` | `budget_alert` | `categoryOrGlobal`, `percentUsed`, `thresholdAmount` | `⚠️ *Peringatan Budget!*\nKategori: *{{categoryOrGlobal}}* mencapai *{{percentUsed}}%*...` |
+| `review_request_v1` | `review_request` | `amount`, `merchant`, `suggestedCategory` | `🔍 *Verifikasi Transaksi*\nNominal: *{{amount}}*\nMerchant: *{{merchant}}*\nKetik *Y* untuk Konfirmasi, *N* untuk Edit` |
+
+- When using **Fonnte** or **Mock**, the `TemplateRenderer` executes Go templates with rich WhatsApp formatting directly.
+- When using **Meta**, parameters are packaged as component parameters for Meta's Cloud API endpoint.
 
 ---
 
@@ -185,10 +254,11 @@ Section 5.1 mandates that the Content Composer reads exclusively from Analytics 
 |---|---|
 | Preference Gate | Enforce per-notification-type opt-out before any composition work begins |
 | Content Composer | Read Analytics models, select template, map values to placeholders |
-| Template Renderer | Final placeholder substitution against the approved template shape |
-| WhatsApp Delivery Client | API communication, rate-limit-aware sending, retry classification |
-| Reply Webhook Handler | Structured button-reply and whitelisted-text-reply interpretation (never open NLU) |
-| Delivery Status Webhook Handler | Two-tier (delivered/read) confirmation tracking |
+| Template Renderer | Final placeholder substitution against Markdown or Meta HSM shape |
+| Messaging Client (Port) | Unified interface (`SendMessage`) abstracting external delivery details |
+| Provider Adapters (`fonnte`, `meta`, `mock`) | Specific API communication, rate-limit-aware sending, provider-specific retry classification |
+| Reply Webhook Handler | Structured button-reply and whitelisted-text-reply interpretation for both Fonnte and Meta |
+| Delivery Status Webhook Handler | Two-tier (delivered/read) confirmation tracking mapped from provider-specific callbacks |
 
 ---
 
