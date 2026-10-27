@@ -46,13 +46,14 @@ var (
 )
 
 const (
-	modeAPI    = "api"
-	modeWorker = "worker"
+	modeAPI              = "api"
+	modeWorker           = "worker"
+	modeRebuildAnalytics = "rebuild-analytics"
 )
 
 func main() {
 	var mode string
-	flag.StringVar(&mode, "mode", "", "Execution mode: 'api' for HTTP serving or 'worker' for background task processing")
+	flag.StringVar(&mode, "mode", "", "Execution mode: 'api' for HTTP serving, 'worker' for background task processing, or 'rebuild-analytics' to reconstruct read models")
 	flag.Parse()
 
 	// Environment variable fallback if flag is not provided
@@ -70,10 +71,10 @@ func main() {
 	}))
 	slog.SetDefault(logger)
 
-	if mode != modeAPI && mode != modeWorker {
+	if mode != modeAPI && mode != modeWorker && mode != modeRebuildAnalytics {
 		logger.Error("invalid platform mode specified",
 			slog.String("mode", mode),
-			slog.String("expected", "api|worker"),
+			slog.String("expected", "api|worker|rebuild-analytics"),
 		)
 		flag.Usage()
 		os.Exit(1)
@@ -93,9 +94,32 @@ func main() {
 		runAPI(ctx, logger)
 	case modeWorker:
 		runWorker(ctx, logger)
+	case modeRebuildAnalytics:
+		runRebuildAnalytics(ctx, logger)
 	}
 
 	logger.Info("financial-event-platform shut down cleanly", slog.String("mode", mode))
+}
+
+func runRebuildAnalytics(ctx context.Context, logger *slog.Logger) {
+	cfg := loadAppConfig(logger)
+	dbPool, err := pgxpool.New(ctx, resolveDatabaseURL(cfg))
+	if err != nil {
+		logger.Error("failed to connect to postgres in rebuild mode", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+	defer dbPool.Close()
+
+	analyticsMod := analytics.NewModule(analytics.ModuleConfig{
+		DBPool: dbPool,
+	})
+
+	logger.Info("rebuilding analytics read models from canonical financialcore outbox history...")
+	if err := analyticsMod.Rebuild(ctx); err != nil {
+		logger.Error("failed to rebuild analytics read models", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+	logger.Info("analytics read models rebuild completed successfully")
 }
 
 func loadAppConfig(logger *slog.Logger) *config.Config {

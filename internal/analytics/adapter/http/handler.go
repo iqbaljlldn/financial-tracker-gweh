@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/iqbaljlldn/financial-tracker-gweh/internal/analytics/application/projection"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/analytics/application/query"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/platform/observability"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/platform/security"
@@ -41,6 +43,8 @@ type HandlerConfig struct {
 	CategoryBreakdownQuery *query.GetCategoryBreakdownHandler
 	MerchantRankingQuery   *query.GetMerchantRankingHandler
 	TrendQuery             *query.GetTrendHandler
+	Rebuilder              *projection.Rebuilder
+	Pool                   *pgxpool.Pool
 	SessionManager         *security.SessionTokenManager
 }
 
@@ -50,6 +54,8 @@ type Handler struct {
 	categoryBreakdownQuery *query.GetCategoryBreakdownHandler
 	merchantRankingQuery   *query.GetMerchantRankingHandler
 	trendQuery             *query.GetTrendHandler
+	rebuilder              *projection.Rebuilder
+	pool                   *pgxpool.Pool
 	sessionManager         *security.SessionTokenManager
 }
 
@@ -60,6 +66,8 @@ func NewHandler(cfg HandlerConfig) *Handler {
 		categoryBreakdownQuery: cfg.CategoryBreakdownQuery,
 		merchantRankingQuery:   cfg.MerchantRankingQuery,
 		trendQuery:             cfg.TrendQuery,
+		rebuilder:              cfg.Rebuilder,
+		pool:                   cfg.Pool,
 		sessionManager:         cfg.SessionManager,
 	}
 }
@@ -73,6 +81,7 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 			cr.Get("/category-breakdown", h.GetCategoryBreakdown)
 			cr.Get("/merchant-ranking", h.GetMerchantRanking)
 			cr.Get("/trend", h.GetTrend)
+			cr.Post("/rebuild", h.Rebuild)
 		})
 	}
 
@@ -268,6 +277,25 @@ func (h *Handler) GetTrend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, res)
+}
+
+// Rebuild serves POST /analytics/rebuild.
+func (h *Handler) Rebuild(w http.ResponseWriter, r *http.Request) {
+	if h.rebuilder == nil || h.pool == nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Rebuilder not configured", "", requestID(r))
+		return
+	}
+
+	if err := h.rebuilder.RebuildFromDB(r.Context(), h.pool); err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error(), "", requestID(r))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":    "rebuilt",
+		"message":   "Analytics read-models successfully rebuilt from canonical ledger history",
+		"timestamp": time.Now().UTC(),
+	})
 }
 
 // Helpers

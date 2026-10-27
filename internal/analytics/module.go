@@ -58,6 +58,8 @@ func NewModule(cfg ModuleConfig) *Module {
 		CategoryBreakdownQuery: catQuery,
 		MerchantRankingQuery:   merchQuery,
 		TrendQuery:             trendQuery,
+		Rebuilder:              rebuilder,
+		Pool:                   cfg.DBPool,
 		SessionManager:         cfg.SessionManager,
 	})
 
