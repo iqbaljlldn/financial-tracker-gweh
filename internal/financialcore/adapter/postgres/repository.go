@@ -323,6 +323,15 @@ func (s *store) ArchiveByConnectorAccount(ctx context.Context, userID, connector
 	return uuidStrings(rows), nil
 }
 
+// PermanentlyEraseArchivedEvents permanently deletes archived financial events older than retention window.
+func (s *store) PermanentlyEraseArchivedEvents(ctx context.Context, olderThan time.Time) (int64, error) {
+	rowsAffected, err := s.q.PermanentlyEraseArchivedEvents(ctx, toTimestamptz(olderThan))
+	if err != nil {
+		return 0, fmt.Errorf("permanently erasing archived events: %w", err)
+	}
+	return rowsAffected, nil
+}
+
 func uuidStrings(in []pgtype.UUID) []string {
 	out := make([]string, 0, len(in))
 	for _, u := range in {

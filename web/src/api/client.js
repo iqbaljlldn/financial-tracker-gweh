@@ -360,11 +360,27 @@ class ApiClient {
     return this.request('/notifications/preferences', { method: 'GET' });
   }
 
-  async updateNotificationPreferences(data) {
-    return this.request('/notifications/preferences', {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    });
+  // --- GDPR Compliance (Identity Module) ---
+  async downloadDataExport() {
+    const url = `${API_BASE}/me/data-export`;
+    const headers = {};
+    if (this.sessionToken) {
+      headers['Authorization'] = `Bearer ${this.sessionToken}`;
+    }
+    const resp = await fetch(url, { method: 'GET', headers });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err?.error?.message || 'Failed to download data export');
+    }
+    const blob = await resp.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = `financial-tracker-export-${Date.now()}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(downloadUrl);
   }
 }
 

@@ -42,10 +42,10 @@ type SubmitEventOverrideCommand struct {
 
 // ArchiveFinancialEventsCommand requests soft-deletion of events by IDs or connector account.
 type ArchiveFinancialEventsCommand struct {
-	UserID             string
-	EventIDs           []string
-	ConnectorAccountID string
-	Reason             string
+	UserID             string   `json:"userId"`
+	EventIDs           []string `json:"eventIds,omitempty"`
+	ConnectorAccountID string   `json:"connectorAccountId,omitempty"`
+	Reason             string   `json:"reason,omitempty"`
 }
 
 // CreateManualEventCommand carries data for user-entered transactions (POST /financial-events).

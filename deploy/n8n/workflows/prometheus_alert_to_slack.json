@@ -1,0 +1,79 @@
+{
+  "name": "Prometheus Alert to Slack Router",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "prometheus-alerts",
+        "options": {}
+      },
+      "id": "1",
+      "name": "Alertmanager Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Enrich and format Prometheus / Alertmanager alerts per 14_workflow_engine.md §4.1\nconst items = $input.all();\nconst output = [];\n\nfor (const item of items) {\n  const payload = item.json;\n  const alerts = payload.alerts || [payload];\n  \n  for (const alert of alerts) {\n    const status = alert.status || 'firing';\n    const severity = (alert.labels && alert.labels.severity) || 'info';\n    const alertName = (alert.labels && alert.labels.alertname) || 'Unknown Alert';\n    const summary = (alert.annotations && alert.annotations.summary) || 'No summary provided';\n    const description = (alert.annotations && alert.annotations.description) || '';\n    const runbookUrl = (alert.annotations && alert.annotations.runbook_url) || '';\n    \n    let color = '#36a64f'; // green for resolved\n    let emoji = '✅';\n    \n    if (status === 'firing') {\n      switch (severity.toLowerCase()) {\n        case 'critical':\n          color = '#ff0000';\n          emoji = '🚨';\n          break;\n        case 'high':\n          color = '#ff9900';\n          emoji = '⚠️';\n          break;\n        case 'medium':\n          color = '#ffcc00';\n          emoji = '⚡';\n          break;\n        default:\n          color = '#439FE0';\n          emoji = 'ℹ️';\n      }\n    }\n    \n    output.push({\n      json: {\n        status,\n        severity,\n        alertName,\n        summary,\n        description,\n        runbookUrl,\n        color,\n        emoji,\n        slackMessage: {\n          text: `${emoji} *[${status.toUpperCase()}] ${alertName} (${severity.toUpperCase()})*\\n*Summary:* ${summary}\\n*Details:* ${description}${runbookUrl ? `\\n*Runbook:* <${runbookUrl}|View Runbook>` : ''}`,\n          attachments: [\n            {\n              color: color,\n              fields: [\n                { title: 'Severity', value: severity.toUpperCase(), short: true },\n                { title: 'Status', value: status.toUpperCase(), short: true },\n                { title: 'Module', value: (alert.labels && alert.labels.module) || 'platform', short: true }\n              ],\n              footer: 'Financial Tracker Platform Alert Router (n8n Sanctioned Workflow)',\n              ts: Math.floor(Date.now() / 1000)\n            }\n          ]\n        }\n      }\n    });\n  }\n}\n\nreturn output;"
+      },
+      "id": "2",
+      "name": "Format and Enrich Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK_URL || 'https://hooks.slack.com/services/mock/ops/alerts' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.slackMessage) }}",
+        "options": {}
+      },
+      "id": "3",
+      "name": "Send Slack Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        700,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Alertmanager Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Format and Enrich Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format and Enrich Alert": {
+      "main": [
+        [
+          {
+            "node": "Send Slack Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

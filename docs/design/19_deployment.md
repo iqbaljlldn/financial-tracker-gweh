@@ -151,7 +151,7 @@ Before the platform's initial production launch (and as a template for subsequen
 - [ ] Every blocking CI stage (`18_testing_strategy.md` §10) green on the release candidate.
 - [ ] Full metric catalog and dashboard catalog (`17_observability.md` §4, §7) implemented and populated with real data from a staging soak period.
 - [ ] GDPR purge-cascade dry-run (`18_testing_strategy.md` §19) completed and observed, not merely automated-tested.
-- [ ] KMS failure-domain entry added to `06_architecture.md` §12's table and this document's Section 8 (addressed in this release, per `16_security.md` §19's explicit action item).
+- [x] KMS failure-domain entry added to `06_architecture.md` §12's table and this document's Section 8 (addressed in this release, per `16_security.md` §19's explicit action item).
 - [ ] WhatsApp message templates (`15_notification_system.md` §4.3) submitted and approved for every `notification_type` the launch scope requires.
 - [ ] Known-sender template library (`13_email_parser.md`) covers the MVP scope's curated sender list (`02_product_requirement_document.md` §6.1), each passing its sample-set validation.
 - [ ] AI evaluation-set baseline (`18_testing_strategy.md` §8) established for the launch prompt version, with documented accuracy/calibration metrics as the reference point for future regression comparison.

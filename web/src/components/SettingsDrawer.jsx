@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { X, Check, Globe, Clock, ShieldCheck, User } from 'lucide-react';
+import { X, Check, Globe, Clock, ShieldCheck, User, Download, FileJson } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { apiClient } from '../api/client';
 import ErrorEnvelopeDisplay from './ErrorEnvelopeDisplay';
 
 const TIMEZONE_OPTIONS = [
@@ -22,6 +23,22 @@ export default function SettingsDrawer({ isOpen, onClose }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportSuccess, setExportSuccess] = useState(false);
+
+  const handleExportData = async () => {
+    try {
+      setExporting(true);
+      setError(null);
+      await apiClient.downloadDataExport();
+      setExportSuccess(true);
+      setTimeout(() => setExportSuccess(false), 3000);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -218,7 +235,43 @@ export default function SettingsDrawer({ isOpen, onClose }) {
             </span>
           </div>
 
-          <div className="glass-card" style={{ padding: '14px', marginTop: 'auto' }}>
+          <div className="glass-card" style={{ padding: '14px', marginTop: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#10b981', fontSize: '13px', fontWeight: 600 }}>
+                <FileJson size={16} />
+                <span>GDPR Data Portability (Art. 15/20)</span>
+              </div>
+            </div>
+            <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '12px', lineHeight: 1.4 }}>
+              Download a complete archive of your financial ledger, budgets, overrides, and account metadata. Raw email content is excluded per Tier 4 minimization.
+            </p>
+            <button
+              type="button"
+              onClick={handleExportData}
+              disabled={exporting}
+              className="btn-secondary"
+              style={{ width: '100%', fontSize: '12px', padding: '8px 12px', justifyContent: 'center' }}
+            >
+              {exporting ? (
+                <>
+                  <div className="spin" style={{ width: '14px', height: '14px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%' }}></div>
+                  <span>Compiling Export...</span>
+                </>
+              ) : exportSuccess ? (
+                <>
+                  <Check size={14} color="#34d399" />
+                  <span style={{ color: '#34d399' }}>Export Downloaded!</span>
+                </>
+              ) : (
+                <>
+                  <Download size={14} />
+                  <span>Download My Data (JSON)</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="glass-card" style={{ padding: '14px', marginTop: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#38bdf8', fontSize: '12px', fontWeight: 600 }}>
               <ShieldCheck size={16} />
               <span>Row-Level Ownership Enforced</span>

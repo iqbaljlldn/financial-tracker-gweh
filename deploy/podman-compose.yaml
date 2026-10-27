@@ -85,6 +85,32 @@ services:
       redis:
         condition: service_healthy
 
+  # n8n Operational Workflow Engine per 14_workflow_engine.md §5
+  # Isolated network policy: strictly NO access to Postgres or Redis. Only calls platform-api via HTTP.
+  n8n:
+    image: n8nio/n8n:1.45.0
+    container_name: financial-n8n
+    restart: unless-stopped
+    ports:
+      - "${N8N_PORT:-5678}:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER:-ops_admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-ops_changeme123}
+      - WEBHOOK_URL=http://localhost:${N8N_PORT:-5678}/
+      - GENERIC_TIMEZONE=UTC
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n/workflows:/workflows:ro
+    networks:
+      - ops_network
+
+networks:
+  default:
+  ops_network:
+    internal: false # connects n8n to outbound alert sinks and platform-api HTTP ingress only
+
 volumes:
   postgres_data:
   redis_data:
+  n8n_data:

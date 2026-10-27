@@ -28,6 +28,9 @@ type KMSClient interface {
 
 	// Decrypt unwraps a wrapped DEK using the master root key identified by keyID.
 	Decrypt(ctx context.Context, keyID string, ciphertextDEK []byte) (plaintextDEK []byte, err error)
+
+	// ReWrap re-encrypts an existing wrapped DEK from oldKeyID to newKeyID (16_security.md §4.4 key rotation).
+	ReWrap(ctx context.Context, oldKeyID, newKeyID string, ciphertextDEK []byte) (newCiphertextDEK []byte, err error)
 }
 
 // LocalKMSClient provides an in-process, AES-256-GCM based KMS implementation
@@ -152,6 +155,40 @@ func (c *LocalKMSClient) Decrypt(ctx context.Context, keyID string, ciphertextDE
 	}
 
 	return plaintextDEK, nil
+}
+
+// ReWrap unwraps a DEK using oldKeyID and re-wraps it under newKeyID per 16_security.md §4.4.
+func (c *LocalKMSClient) ReWrap(ctx context.Context, oldKeyID, newKeyID string, ciphertextDEK []byte) ([]byte, error) {
+	plaintextDEK, err := c.Decrypt(ctx, oldKeyID, ciphertextDEK)
+	if err != nil {
+		return nil, fmt.Errorf("kms re-wrap: decrypt with old key failed: %w", err)
+	}
+	defer SecureWipe(plaintextDEK)
+
+	c.mu.RLock()
+	newMasterKey, exists := c.keys[newKeyID]
+	c.mu.RUnlock()
+
+	if !exists {
+		return nil, fmt.Errorf("%w: %s", ErrKMSKeyNotFound, newKeyID)
+	}
+
+	block, err := aes.NewCipher(newMasterKey)
+	if err != nil {
+		return nil, fmt.Errorf("kms re-wrap: cipher init failed: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("kms re-wrap: gcm init failed: %w", err)
+	}
+
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil, fmt.Errorf("kms re-wrap: failed to generate nonce: %w", err)
+	}
+
+	newCiphertextDEK := gcm.Seal(nonce, nonce, plaintextDEK, []byte(newKeyID))
+	return newCiphertextDEK, nil
 }
 
 // SecureWipe zeroizes sensitive byte slices from memory.

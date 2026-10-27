@@ -44,6 +44,9 @@ type Metrics struct {
 	FinancialCoreOverridesSubmittedTotal     *prometheus.CounterVec
 	FinancialCoreDedupConflictTotal          prometheus.Counter
 
+	// Financial Core Module Metrics (§4.3)
+	FinancialCoreConfidenceCalibrationOverrideRate *prometheus.GaugeVec
+
 	// Budget Module Metrics (§4.4)
 	BudgetThresholdCrossedTotal     *prometheus.CounterVec
 	BudgetEvaluationDurationSeconds prometheus.Histogram
@@ -52,6 +55,24 @@ type Metrics struct {
 	AnalyticsProjectionLagSeconds           *prometheus.HistogramVec
 	AnalyticsProjectionCheckpointAgeSeconds *prometheus.GaugeVec
 	AnalyticsQueryDurationSeconds           *prometheus.HistogramVec
+
+	// Engagement Module Metrics (§4.6)
+	EngagementNotificationsComposedTotal      *prometheus.CounterVec
+	EngagementNotificationsSkippedOptoutTotal *prometheus.CounterVec
+	EngagementDeliveryOutcomeTotal            *prometheus.CounterVec
+	EngagementWhatsAppMessagingTierUsageRatio prometheus.Gauge
+	EngagementWhatsAppBlockRate               prometheus.Gauge
+	EngagementReplyParseOutcomeTotal          *prometheus.CounterVec
+
+	// Administration & Cross-Cutting Metrics (§4.7)
+	OutboxRelayLagSeconds       *prometheus.HistogramVec
+	OutboxUnrelayedRows         *prometheus.GaugeVec
+	AsynqDeadLetterTotal        *prometheus.CounterVec
+	AsynqTaskRetryTotal         *prometheus.CounterVec
+	AdminOpsAccessTotal         *prometheus.CounterVec
+	KMSOperationDurationSeconds *prometheus.HistogramVec
+	KMSOperationFailureTotal    *prometheus.CounterVec
+	HTTPRequestDurationSeconds  *prometheus.HistogramVec
 }
 
 var defaultMetrics *Metrics
@@ -292,6 +313,127 @@ func InitMetrics() *Metrics {
 			},
 			[]string{"endpoint"},
 		),
+
+		FinancialCoreConfidenceCalibrationOverrideRate: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "financialcore_confidence_calibration_override_rate",
+				Help: "Rate of user overrides by confidence score bucket.",
+			},
+			[]string{"confidence_bucket"},
+		),
+
+		EngagementNotificationsComposedTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "engagement_notifications_composed_total",
+				Help: "Total notifications composed partitioned by notification type.",
+			},
+			[]string{"notification_type"},
+		),
+
+		EngagementNotificationsSkippedOptoutTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "engagement_notifications_skipped_optout_total",
+				Help: "Total notifications skipped due to user opt-out preference.",
+			},
+			[]string{"notification_type"},
+		),
+
+		EngagementDeliveryOutcomeTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "engagement_delivery_outcome_total",
+				Help: "Total notification delivery outcomes partitioned by notification_type and tier.",
+			},
+			[]string{"notification_type", "tier"},
+		),
+
+		EngagementWhatsAppMessagingTierUsageRatio: prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Name: "engagement_whatsapp_messaging_tier_usage_ratio",
+				Help: "Ratio of daily WhatsApp messaging tier quota consumed.",
+			},
+		),
+
+		EngagementWhatsAppBlockRate: prometheus.NewGauge(
+			prometheus.GaugeOpts{
+				Name: "engagement_whatsapp_block_rate",
+				Help: "Rolling WhatsApp quality/block rate signal.",
+			},
+		),
+
+		EngagementReplyParseOutcomeTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "engagement_reply_parse_outcome_total",
+				Help: "Total WhatsApp incoming reply parse outcomes.",
+			},
+			[]string{"outcome"},
+		),
+
+		OutboxRelayLagSeconds: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "outbox_relay_lag_seconds",
+				Help:    "Latency in seconds between outbox row insertion and relay completion.",
+				Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30, 60},
+			},
+			[]string{"module"},
+		),
+
+		OutboxUnrelayedRows: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "outbox_unrelayed_rows",
+				Help: "Current count of unrelayed rows in module outbox table.",
+			},
+			[]string{"module"},
+		),
+
+		AsynqDeadLetterTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "asynq_dead_letter_total",
+				Help: "Total tasks permanently dead-lettered partitioned by queue.",
+			},
+			[]string{"queue_name"},
+		),
+
+		AsynqTaskRetryTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "asynq_task_retry_total",
+				Help: "Total task retry attempts partitioned by queue and task type.",
+			},
+			[]string{"queue_name", "task_type"},
+		),
+
+		AdminOpsAccessTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "admin_ops_access_total",
+				Help: "Total accesses to administrative surface by ops role, partitioned by endpoint.",
+			},
+			[]string{"endpoint"},
+		),
+
+		KMSOperationDurationSeconds: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "kms_operation_duration_seconds",
+				Help:    "Latency in seconds of KMS key operations (generate, unwrap, re-wrap).",
+				Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1},
+			},
+			[]string{"operation"},
+		),
+
+		KMSOperationFailureTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "kms_operation_failure_total",
+				Help: "Total failed KMS key management operations.",
+			},
+			[]string{"operation"},
+		),
+
+		HTTPRequestDurationSeconds: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "http_request_duration_seconds",
+				Help:    "HTTP request duration in seconds partitioned by route, method, and status code.",
+				Buckets: prometheus.DefBuckets,
+			},
+			[]string{"route", "method", "status_code"},
+		),
 	}
 
 	reg.MustRegister(
@@ -319,11 +461,26 @@ func InitMetrics() *Metrics {
 		m.FinancialCorePendingReviewSLABreachTotal,
 		m.FinancialCoreOverridesSubmittedTotal,
 		m.FinancialCoreDedupConflictTotal,
+		m.FinancialCoreConfidenceCalibrationOverrideRate,
 		m.BudgetThresholdCrossedTotal,
 		m.BudgetEvaluationDurationSeconds,
 		m.AnalyticsProjectionLagSeconds,
 		m.AnalyticsProjectionCheckpointAgeSeconds,
 		m.AnalyticsQueryDurationSeconds,
+		m.EngagementNotificationsComposedTotal,
+		m.EngagementNotificationsSkippedOptoutTotal,
+		m.EngagementDeliveryOutcomeTotal,
+		m.EngagementWhatsAppMessagingTierUsageRatio,
+		m.EngagementWhatsAppBlockRate,
+		m.EngagementReplyParseOutcomeTotal,
+		m.OutboxRelayLagSeconds,
+		m.OutboxUnrelayedRows,
+		m.AsynqDeadLetterTotal,
+		m.AsynqTaskRetryTotal,
+		m.AdminOpsAccessTotal,
+		m.KMSOperationDurationSeconds,
+		m.KMSOperationFailureTotal,
+		m.HTTPRequestDurationSeconds,
 	)
 
 	defaultMetrics = m

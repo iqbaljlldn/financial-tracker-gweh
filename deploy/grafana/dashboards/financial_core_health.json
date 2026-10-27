@@ -1,0 +1,107 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 104,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Financial Core & Ledger Health (17_observability.md §7)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
+      "id": 2,
+      "title": "Event Finalization Rate (Direct vs Confirmed)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(financialcore_finalized_events_total[5m])) by (method)",
+          "legendFormat": "{{method}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
+      "id": 3,
+      "title": "Pending Review Queue Depth",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "financialcore_pending_review_queue_depth",
+          "legendFormat": "Queue Depth",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
+      "id": 4,
+      "title": "Pending Review SLA Breaches Total",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "financialcore_pending_review_sla_breach_total",
+          "legendFormat": "SLA Breaches",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "id": 5,
+      "title": "Dedup Conflicts Rate (Idempotency Signal)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(financialcore_dedup_conflicts_total[5m])",
+          "legendFormat": "Dedup Conflicts / sec",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "id": 6,
+      "title": "Override Submission Rate by Field",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(financialcore_overrides_total[5m])) by (field_name)",
+          "legendFormat": "{{field_name}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["financialcore", "ledger", "sprint10"],
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "Financial Core Health",
+  "uid": "financial-core-health"
+}

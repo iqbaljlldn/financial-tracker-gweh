@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	adminDomain "github.com/iqbaljlldn/financial-tracker-gweh/internal/administration/domain"
 	fcHttp "github.com/iqbaljlldn/financial-tracker-gweh/internal/financialcore/adapter/http"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/financialcore/adapter/postgres"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/financialcore/adapter/postgres/gen"
@@ -36,6 +37,7 @@ type Config struct {
 	PendingReviewSLA    time.Duration
 	CategorySuggester   domain.CategorySuggester
 	CategoryFeedback    domain.CategoryFeedback
+	AuditLogger         adminDomain.AuditLogger
 	Logger              *slog.Logger
 }
 
@@ -51,6 +53,7 @@ type Module struct {
 	GetEventQuery      *query.GetFinancialEventByIDHandler
 	ListOverridesQuery *query.ListEventOverridesHandler
 	HTTPHandler        *fcHttp.Handler
+	auditLogger        adminDomain.AuditLogger
 	logger             *slog.Logger
 	dbPool             *pgxpool.Pool
 	asynqClient        *asynq.Client
@@ -106,6 +109,7 @@ func NewModule(cfg Config) (*Module, error) {
 		GetEventQuery:      getQuery,
 		ListOverridesQuery: listOverridesQuery,
 		HTTPHandler:        httpHandler,
+		auditLogger:        cfg.AuditLogger,
 		logger:             cfg.Logger,
 		dbPool:             cfg.DB,
 		asynqClient:        cfg.AsynqClient,
@@ -237,6 +241,19 @@ func (m *Module) pollOutbox(ctx context.Context) {
 			}
 		}
 
+		// Diagram 8: every archival event also fans to [TX: administration] append-only INSERT audit_log
+		// (records the purge action itself; this audit record is explicitly EXEMPT from later erasure)
+		if row.EventType == domain.EventFinancialEventArchived && m.auditLogger != nil {
+			var p domain.FinancialEventArchivedPayload
+			if err := json.Unmarshal(row.Payload, &p); err == nil {
+				_ = m.auditLogger.Log(ctx, &p.UserID, "financial_event_archived", "system", map[string]any{
+					"eventId":   p.EventID,
+					"reason":    p.Reason,
+					"timestamp": p.EmittedAt,
+				})
+			}
+		}
+
 		// Relay to Engagement review request notification
 		if row.EventType == domain.EventFinancialEventPendingReview && m.asynqClient != nil {
 			var p domain.FinancialEventPendingReviewPayload
@@ -260,4 +277,11 @@ func (m *Module) pollOutbox(ctx context.Context) {
 	}
 
 	_ = queries.MarkFinancialCoreOutboxRelayed(ctx, ids)
+}
+
+// PermanentlyEraseArchivedEvents runs the scheduled permanent-erasure sweep
+// deleting archived financial events older than retentionWindow (07_sequence_diagrams.md Diagram 8).
+func (m *Module) PermanentlyEraseArchivedEvents(ctx context.Context, olderThan time.Time) (int64, error) {
+	repo := postgres.NewRepository(m.dbPool)
+	return repo.PermanentlyEraseArchivedEvents(ctx, olderThan)
 }

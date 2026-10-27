@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	adminDomain "github.com/iqbaljlldn/financial-tracker-gweh/internal/administration/domain"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/identity/adapter/external"
 	identityhttp "github.com/iqbaljlldn/financial-tracker-gweh/internal/identity/adapter/http"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/identity/adapter/postgres"
@@ -20,6 +21,8 @@ import (
 // Config provides initialization parameters for the Identity module composition root.
 type Config struct {
 	DB                 postgres.DBTX
+	AuditLogger        adminDomain.AuditLogger
+	UserDataExporter   domain.UserDataExporter
 	KMSClient          security.KMSClient
 	KMSKeyID           string
 	JWTSecret          []byte
@@ -117,13 +120,21 @@ func NewModule(cfg Config) (*Module, error) {
 	updateSettingsCmd := command.NewUpdateUserSettingsHandler(userRepo)
 	getUserQuery := query.NewGetUserByIDHandler(userRepo)
 
-	// 3. HTTP Handler
+	// 3. Exporter
+	exporter := cfg.UserDataExporter
+	if exporter == nil && cfg.DB != nil {
+		exporter = postgres.NewPostgresUserDataExporter(cfg.DB)
+	}
+
+	// 4. HTTP Handler
 	httpHandler := identityhttp.NewHandler(identityhttp.HandlerConfig{
 		LinkAccountCmd:    linkAccountCmd,
 		UpdateSettingsCmd: updateSettingsCmd,
 		GetUserQuery:      getUserQuery,
 		RefreshRepo:       refreshRepo,
 		UserRepo:          userRepo,
+		UserDataExporter:  exporter,
+		AuditLogger:       cfg.AuditLogger,
 		OAuthClient:       oauthClient,
 		CSRFManager:       csrfManager,
 		SessionManager:    sessionManager,

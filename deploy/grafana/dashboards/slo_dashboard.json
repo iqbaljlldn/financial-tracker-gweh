@@ -1,0 +1,161 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 108,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Service Level Objectives (SLO) & Error Budgets (17_observability.md §9)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 120 }]
+          },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
+      "id": 2,
+      "title": "SLO: Finalization Latency Template Path (P95 ≤ 2 min)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(understanding_pipeline_duration_seconds_bucket{path=\"template\"}[5m])) by (le))",
+          "legendFormat": "Template P95 (Target: ≤ 120s)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 300 }]
+          },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
+      "id": 3,
+      "title": "SLO: Finalization Latency AI Path (P95 ≤ 5 min)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(understanding_pipeline_duration_seconds_bucket{path=\"ai\"}[5m])) by (le))",
+          "legendFormat": "AI P95 (Target: ≤ 300s)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 0.5 }]
+          },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
+      "id": 4,
+      "title": "SLO: Analytics Query Latency (P95 ≤ 500ms)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{handler=~\"/analytics/.*\"}[5m])) by (le))",
+          "legendFormat": "Analytics P95 (Target: ≤ 0.5s)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.995 }, { "color": "green", "value": 0.999 }]
+          },
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 9 },
+      "id": 5,
+      "title": "SLO: Monthly API Availability (Target: ≥ 99.9%)",
+      "type": "gauge",
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{status!~\"5..\"}[30d])) / sum(rate(http_requests_total[30d]))",
+          "legendFormat": "Availability",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 0.99 }]
+          },
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 9 },
+      "id": 6,
+      "title": "SLO: WhatsApp Delivery Success (Target: ≥ 99%)",
+      "type": "gauge",
+      "targets": [
+        {
+          "expr": "sum(rate(engagement_notifications_delivered_total[24h])) / sum(rate(engagement_notifications_accepted_total[24h]))",
+          "legendFormat": "Delivery Success",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 0.9999 }]
+          },
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 9 },
+      "id": 7,
+      "title": "SLO: Watch Renewal Reliability (Target: ≥ 99.99%)",
+      "type": "gauge",
+      "targets": [
+        {
+          "expr": "sum(rate(ingestion_watch_renewal_success_total[30d])) / (sum(rate(ingestion_watch_renewal_success_total[30d])) + sum(rate(ingestion_watch_renewal_failure_total[30d])))",
+          "legendFormat": "Renewal Reliability",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["slo", "sre", "reliability", "sprint10"],
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "SLO & Reliability Dashboard",
+  "uid": "slo-dashboard"
+}

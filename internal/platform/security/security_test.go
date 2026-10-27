@@ -228,3 +228,70 @@ func TestJWTSessionTokenManager(t *testing.T) {
 		t.Fatalf("expected ErrJWTExpired, got %v", err)
 	}
 }
+
+// TestKeyRotationAndReWrap exercises root key rotation in practice (16_security.md §4.4)
+// verifying that re-wrapping the DEK allows seamless migration to a new root key
+// without re-encrypting the underlying token ciphertext.
+func TestKeyRotationAndReWrap(t *testing.T) {
+	ctx := context.Background()
+	keyV1 := randomKey32(t)
+	keyV2 := randomKey32(t)
+
+	kmsClient, err := security.NewLocalKMSClient("kms-master-v1", keyV1)
+	if err != nil {
+		t.Fatalf("failed to init KMS with v1 key: %v", err)
+	}
+
+	// 1. Create envelope encryptor using v1 root key
+	encryptorV1, err := security.NewEnvelopeEncryptor(kmsClient, "kms-master-v1")
+	if err != nil {
+		t.Fatalf("failed to create encryptor v1: %v", err)
+	}
+
+	secretToken := []byte("ya29.a0AfH6SMB_sample_live_gmail_oauth_token_secret_12345")
+	encryptedPayload, err := encryptorV1.Encrypt(ctx, secretToken)
+	if err != nil {
+		t.Fatalf("encrypt under v1 failed: %v", err)
+	}
+
+	// Decrypt under v1 to verify initial state
+	decryptedV1, err := encryptorV1.Decrypt(ctx, encryptedPayload)
+	if err != nil {
+		t.Fatalf("decrypt under v1 failed: %v", err)
+	}
+	if string(decryptedV1) != string(secretToken) {
+		t.Fatalf("expected %s, got %s", string(secretToken), string(decryptedV1))
+	}
+
+	// 2. Register new KMS root key (kms-master-v2)
+	if err := kmsClient.RegisterKey("kms-master-v2", keyV2); err != nil {
+		t.Fatalf("failed to register v2 key in KMS: %v", err)
+	}
+
+	// 3. Exercise Key Rotation: ReWrap envelope without re-encrypting ciphertext
+	reWrappedPayload, err := encryptorV1.ReWrapEnvelope(ctx, "kms-master-v2", encryptedPayload)
+	if err != nil {
+		t.Fatalf("re-wrap envelope failed: %v", err)
+	}
+
+	// 4. Create new encryptor bound to kms-master-v2
+	encryptorV2, err := security.NewEnvelopeEncryptor(kmsClient, "kms-master-v2")
+	if err != nil {
+		t.Fatalf("failed to create encryptor v2: %v", err)
+	}
+
+	// 5. Decrypt using v2 encryptor: must successfully recover exact plaintext
+	decryptedV2, err := encryptorV2.Decrypt(ctx, reWrappedPayload)
+	if err != nil {
+		t.Fatalf("decrypt under rotated v2 key failed: %v", err)
+	}
+	if string(decryptedV2) != string(secretToken) {
+		t.Fatalf("expected %s, got %s", string(secretToken), string(decryptedV2))
+	}
+
+	// 6. Verify that v1 encryptor CANNOT decrypt the rotated payload (it was re-wrapped to v2)
+	_, err = encryptorV1.Decrypt(ctx, reWrappedPayload)
+	if err == nil {
+		t.Fatal("expected v1 encryptor to fail decrypting payload re-wrapped to v2, got nil")
+	}
+}

@@ -1,0 +1,96 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 103,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Prompt Monitoring & AI Evaluation (FR-ADMIN-03 & 17_observability.md §7)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "id": 2,
+      "title": "Confidence Distribution by Prompt Version",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(understanding_ai_confidence_bucket[5m])) by (le, prompt_version))",
+          "legendFormat": "{{prompt_version}} P50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.90, sum(rate(understanding_ai_confidence_bucket[5m])) by (le, prompt_version))",
+          "legendFormat": "{{prompt_version}} P90",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "id": 3,
+      "title": "AI Token Spend Rate (Prompt vs Completion)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(understanding_ai_tokens_consumed_total[5m])) by (type, model)",
+          "legendFormat": "{{model}} - {{type}} tokens/sec",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 0.01 }]
+          },
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "id": 4,
+      "title": "Schema Validation Failure Rate",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(understanding_ai_schema_validation_failures_total[5m])) / sum(rate(understanding_ai_calls_total[5m]))",
+          "legendFormat": "Validation Failure Rate",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "id": 5,
+      "title": "AI Call Latency (P95 by Model)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(understanding_ai_call_duration_seconds_bucket[5m])) by (le, model))",
+          "legendFormat": "{{model}} P95",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["ai", "prompt", "sprint10"],
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "Prompt Monitoring",
+  "uid": "prompt-monitoring"
+}

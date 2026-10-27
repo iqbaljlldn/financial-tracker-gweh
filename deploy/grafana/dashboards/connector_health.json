@@ -1,0 +1,83 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 102,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Connector Health (FR-ADMIN-01 & 17_observability.md §7)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "id": 2,
+      "title": "Poll-Fallback Liveness Heartbeat Age (H2 Safety Net)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "time() - ingestion_poll_fallback_liveness",
+          "legendFormat": "Heartbeat Age",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "percentunit" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "id": 3,
+      "title": "Watch Renewal Success Rate",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(ingestion_watch_renewal_success_total[1h]) / (rate(ingestion_watch_renewal_success_total[1h]) + rate(ingestion_watch_renewal_failure_total[1h]))",
+          "legendFormat": "Renewal Success Rate",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "id": 4,
+      "title": "Gmail Quota Units Consumed Total",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(ingestion_gmail_quota_units_consumed_total[5m])",
+          "legendFormat": "Quota Units / sec",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "id": 5,
+      "title": "Accounts Expiring Soon (< 24h)",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "ingestion_watch_expiring_soon",
+          "legendFormat": "Accounts Expiring Soon",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["connector", "gmail", "sprint10"],
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "Connector Health",
+  "uid": "connector-health"
+}

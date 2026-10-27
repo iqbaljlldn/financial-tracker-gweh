@@ -90,3 +90,69 @@ groups:
           description: "One or more transactions have remained in pending_review status beyond the SLA window (7-day default) without user confirmation."
           runbook_url: "docs/17_observability.md#8-alerting-rules--severity"
 
+  - name: platform_and_infrastructure_alerts
+    rules:
+      # Outbox relay lag exceeds SLO (17_observability.md §8 & §9)
+      - alert: OutboxRelayLagExceeded
+        expr: histogram_quantile(0.95, sum(rate(outbox_relay_lag_seconds_bucket[5m])) by (le, module)) > 30
+        for: 5m
+        labels:
+          severity: medium
+          module: platform
+        annotations:
+          summary: "Outbox relay lag P95 exceeded 30 seconds"
+          description: "Outbox relay in module {{ $labels.module }} has a P95 lag of {{ $value }}s, indicating async broker or poller delay."
+          runbook_url: "docs/17_observability.md#8-alerting-rules--severity"
+
+      # Dead-letter queue growth (17_observability.md §8)
+      - alert: DeadLetterQueueGrowth
+        expr: increase(asynq_dead_letter_total[15m]) > 5
+        for: 5m
+        labels:
+          severity: medium
+          module: platform
+        annotations:
+          summary: "Asynq dead-letter queue is accumulating exhausted tasks"
+          description: "{{ $value }} tasks have failed all retries and moved to dead-letter in queue {{ $labels.queue }}."
+          runbook_url: "docs/17_observability.md#8-alerting-rules--severity"
+
+  - name: engagement_alerts
+    rules:
+      # WhatsApp block-rate rise (17_observability.md §8, 15_notification_system.md §9)
+      - alert: WhatsAppBlockRateRise
+        expr: engagement_whatsapp_block_rate > 0.02
+        for: 15m
+        labels:
+          severity: high
+          module: engagement
+        annotations:
+          summary: "WhatsApp user block rate exceeds 2% threshold"
+          description: "Current block rate is {{ $value | humanizePercentage }}. Immediate risk to Meta WhatsApp Business API quality tier."
+          runbook_url: "docs/15_notification_system.md#9-risk-management--mitigation"
+
+  - name: security_and_compliance_alerts
+    rules:
+      # KMS operation failure -> Critical PagerDuty (16_security.md §19, 17_observability.md §8)
+      - alert: KMSOperationFailure
+        expr: increase(kms_operation_failure_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          module: security
+        annotations:
+          summary: "KMS envelope encryption or key unwrapping operation failure"
+          description: "KMS operation {{ $labels.operation }} failed for key {{ $labels.key_id }}. Token decryption and refresh operations are failing."
+          runbook_url: "docs/19_deployment.md#8-operational-runbooks-incident-response"
+
+      # GDPR erasure approaching deadline -> Critical + Compliance contact (16_security.md §19, 17_observability.md §8)
+      - alert: GDPRErasureApproachingDeadline
+        expr: gdpr_purge_request_age_days > 25
+        for: 1h
+        labels:
+          severity: critical
+          module: compliance
+        annotations:
+          summary: "GDPR user data erasure request approaching 30-day regulatory deadline"
+          description: "One or more purge requests have been active for > 25 days without permanent erasure completion."
+          runbook_url: "docs/16_security.md#92-right-to-erasure"
+

@@ -97,6 +97,11 @@ WHERE user_id = @user_id::uuid
   AND status <> 'archived'
 RETURNING id;
 
+-- name: PermanentlyEraseArchivedEvents :execrows
+DELETE FROM financialcore.financial_events
+WHERE status = 'archived'
+  AND updated_at < @older_than::timestamptz;
+
 -- name: InsertEventOverride :exec
 INSERT INTO financialcore.event_overrides (
     id, financial_event_id, field_name, previous_value, new_value, actor_user_id, corrected_at

@@ -1,0 +1,107 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 106,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Security & Compliance Hardening (16_security.md & 17_observability.md §7)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
+      "id": 2,
+      "title": "Ops Role Access Log Volume (/admin/*)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(admin_ops_access_total[5m])) by (actor, endpoint)",
+          "legendFormat": "{{actor}} - {{endpoint}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
+      "id": 3,
+      "title": "KMS Operation Failures Total (Critical Alert)",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "sum(kms_operation_failure_total)",
+          "legendFormat": "KMS Failures",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
+      "id": 4,
+      "title": "KMS Operation Latency (P95 / P99)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(kms_operation_duration_seconds_bucket[5m])) by (le, operation))",
+          "legendFormat": "{{operation}} P95",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "id": 5,
+      "title": "GDPR Erasure Cascade Completion Duration (Diagram 8)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(gdpr_erasure_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "P95 Erasure Time",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "id": 6,
+      "title": "Oldest Active Purge Request Age (Days)",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "gdpr_purge_request_age_days",
+          "legendFormat": "Days Active (Max: 30d)",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["security", "compliance", "gdpr", "kms", "sprint10"],
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "Security & Compliance",
+  "uid": "security-compliance"
+}

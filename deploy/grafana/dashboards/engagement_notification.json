@@ -1,0 +1,101 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 105,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Engagement & Notification Funnel (17_observability.md §7)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "id": 2,
+      "title": "Delivery Funnel (Composed -> Accepted -> Confirmed)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(engagement_notifications_composed_total[5m])) by (notification_type)",
+          "legendFormat": "{{notification_type}} Composed",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(engagement_notifications_accepted_total[5m])) by (provider)",
+          "legendFormat": "{{provider}} Accepted",
+          "refId": "B"
+        },
+        {
+          "expr": "sum(rate(engagement_notifications_delivered_total[5m])) by (provider)",
+          "legendFormat": "{{provider}} Confirmed Delivered",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 0.01 }, { "color": "red", "value": 0.02 }]
+          },
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "id": 3,
+      "title": "WhatsApp Block Rate (Risk to Quality Rating)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "engagement_whatsapp_block_rate",
+          "legendFormat": "Block Rate",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "id": 4,
+      "title": "Inbound User Reply Actions (Y / N / Edit)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(engagement_reply_actions_total[5m])) by (action)",
+          "legendFormat": "{{action}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "id": 5,
+      "title": "WhatsApp Daily Messaging Limit Tier Headroom",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "engagement_whatsapp_tier_headroom",
+          "legendFormat": "Messages Remaining in Tier",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["engagement", "whatsapp", "notifications", "sprint10"],
+  "time": { "from": "now-6h", "to": "now" },
+  "title": "Engagement & Notification",
+  "uid": "engagement-notification"
+}

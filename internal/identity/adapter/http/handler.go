@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	adminDomain "github.com/iqbaljlldn/financial-tracker-gweh/internal/administration/domain"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/identity/adapter/external"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/identity/application/command"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/identity/application/query"
@@ -46,6 +48,8 @@ type Handler struct {
 	getUserQuery      *query.GetUserByIDHandler
 	refreshRepo       domain.RefreshTokenRepository
 	userRepo          domain.UserRepository
+	userDataExporter  domain.UserDataExporter
+	auditLogger       adminDomain.AuditLogger
 	oauthClient       *external.GoogleOAuthClient
 	csrfManager       *security.OAuthStateManager
 	sessionManager    *security.SessionTokenManager
@@ -60,6 +64,8 @@ type HandlerConfig struct {
 	GetUserQuery      *query.GetUserByIDHandler
 	RefreshRepo       domain.RefreshTokenRepository
 	UserRepo          domain.UserRepository
+	UserDataExporter  domain.UserDataExporter
+	AuditLogger       adminDomain.AuditLogger
 	OAuthClient       *external.GoogleOAuthClient
 	CSRFManager       *security.OAuthStateManager
 	SessionManager    *security.SessionTokenManager
@@ -73,6 +79,8 @@ func NewHandler(cfg HandlerConfig) *Handler {
 		getUserQuery:      cfg.GetUserQuery,
 		refreshRepo:       cfg.RefreshRepo,
 		userRepo:          cfg.UserRepo,
+		userDataExporter:  cfg.UserDataExporter,
+		auditLogger:       cfg.AuditLogger,
 		oauthClient:       cfg.OAuthClient,
 		csrfManager:       cfg.CSRFManager,
 		sessionManager:    cfg.SessionManager,
@@ -98,6 +106,7 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 			me.Use(h.SessionAuthMiddleware)
 			me.Get("/", h.GetMe)
 			me.Patch("/settings", h.UpdateSettings)
+			me.Get("/data-export", h.DataExport)
 		})
 	}
 
@@ -324,6 +333,41 @@ func (h *Handler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, ToUserDTO(user))
+}
+
+// DataExport handles GET /api/v1/me/data-export per 16_security.md §9.1 (GDPR Right to Access/Data Portability).
+func (h *Handler) DataExport(w http.ResponseWriter, r *http.Request) {
+	userID, ok := UserIDFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "UNAUTHORIZED", "Missing authenticated user context", "")
+		return
+	}
+
+	if h.userDataExporter == nil {
+		writeError(w, http.StatusNotImplemented, "NOT_IMPLEMENTED", "Data export service unavailable", "")
+		return
+	}
+
+	export, err := h.userDataExporter.Export(r.Context(), userID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "EXPORT_FAILED", "Failed to compile user data export", err.Error())
+		return
+	}
+
+	// Audit log the export per 16_security.md §8 & §9.1
+	if h.auditLogger != nil {
+		_ = h.auditLogger.Log(r.Context(), &userID, "gdpr_data_export", "user", map[string]any{
+			"source":     "self_service",
+			"remote_ip":  r.RemoteAddr,
+			"user_agent": r.UserAgent(),
+		})
+	}
+
+	filename := fmt.Sprintf("financial-tracker-export-%s-%d.json", userID, time.Now().UTC().Unix())
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(export)
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {

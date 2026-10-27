@@ -16,8 +16,9 @@ export default class ErrorBoundary extends Component {
 
   componentDidCatch(error, errorInfo) {
     this.setState({ errorInfo });
-    // In production, forward to Sentry / observability endpoint
-    console.error('[FinGweh Frontend Error Boundary Caught]', error, errorInfo);
+    // Strip potential PII before logging per 16_security.md §7
+    const sanitizedMsg = String(error?.message || 'Unknown error').replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '[REDACTED_EMAIL]');
+    console.error('[FinGweh Frontend Error Boundary Caught]', sanitizedMsg, errorInfo?.componentStack);
   }
 
   handleReload = () => {

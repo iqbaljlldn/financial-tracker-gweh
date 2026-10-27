@@ -299,47 +299,70 @@ export default function AppShell() {
             <MessageSquare size={16} /> WhatsApp Hub
           </button>
 
-          <button
-            onClick={() => setActiveTab('audit')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              padding: '10px 14px',
-              borderRadius: 'var(--radius-sm)',
-              border: 'none',
-              background: activeTab === 'audit' ? 'rgba(16, 185, 129, 0.15)' : 'transparent',
-              color: activeTab === 'audit' ? '#34d399' : 'var(--text-secondary)',
-              fontWeight: activeTab === 'audit' ? 600 : 500,
-              fontSize: '14px',
-              cursor: 'pointer',
-              textAlign: 'left',
-              transition: 'all 0.15s ease',
-            }}
-          >
-            <Database size={16} /> Audit Trail
-          </button>
+          {user?.role === 'ops' && (
+            <>
+              <div
+                style={{
+                  marginTop: '16px',
+                  marginBottom: '4px',
+                  paddingLeft: '14px',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  color: '#f59e0b',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <Lock size={12} />
+                <span>Ops Surface</span>
+              </div>
 
-          <button
-            onClick={() => setActiveTab('parser')}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              padding: '10px 14px',
-              borderRadius: 'var(--radius-sm)',
-              border: 'none',
-              background: activeTab === 'parser' ? 'rgba(16, 185, 129, 0.15)' : 'transparent',
-              color: activeTab === 'parser' ? '#34d399' : 'var(--text-secondary)',
-              fontWeight: activeTab === 'parser' ? 600 : 500,
-              fontSize: '14px',
-              cursor: 'pointer',
-              textAlign: 'left',
-              transition: 'all 0.15s ease',
-            }}
-          >
-            <Cpu size={16} /> Parser Telemetry
-          </button>
+              <button
+                onClick={() => setActiveTab('audit')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '10px 14px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: 'none',
+                  background: activeTab === 'audit' ? 'rgba(245, 158, 11, 0.15)' : 'transparent',
+                  color: activeTab === 'audit' ? '#fbbf24' : 'var(--text-secondary)',
+                  fontWeight: activeTab === 'audit' ? 600 : 500,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <Database size={16} /> Audit Trail
+              </button>
+
+              <button
+                onClick={() => setActiveTab('parser')}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '10px 14px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: 'none',
+                  background: activeTab === 'parser' ? 'rgba(245, 158, 11, 0.15)' : 'transparent',
+                  color: activeTab === 'parser' ? '#fbbf24' : 'var(--text-secondary)',
+                  fontWeight: activeTab === 'parser' ? 600 : 500,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <Cpu size={16} /> Parser Telemetry
+              </button>
+            </>
+          )}
         </nav>
 
         {/* Tab Content Area */}
@@ -446,26 +469,46 @@ export default function AppShell() {
           {activeTab === 'notifications' && <NotificationPreferencesView />}
 
           {activeTab === 'audit' && (
-            <div>
-              <div style={{ marginBottom: '24px' }}>
-                <h1 style={{ fontSize: '24px', marginBottom: '6px' }}>Tamper-Resistant Audit Trail</h1>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
-                  <code>administration.audit_log</code> is append-only; <code>DELETE</code> and <code>UPDATE</code> grants have been revoked from the service role.
-                </p>
-              </div>
-
-              <div className="glass-card" style={{ padding: '24px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#10b981', fontWeight: 600, fontSize: '14px' }}>
-                  <CheckCircle2 size={16} /> Immutability Security Gate Verified
+            user?.role === 'ops' ? (
+              <div>
+                <div style={{ marginBottom: '24px' }}>
+                  <h1 style={{ fontSize: '24px', marginBottom: '6px' }}>Tamper-Resistant Audit Trail</h1>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
+                    <code>administration.audit_log</code> is append-only; <code>DELETE</code> and <code>UPDATE</code> grants have been revoked from the service role.
+                  </p>
                 </div>
-                <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '8px' }}>
-                  Attempts to mutate or purge audit records will fail at the PostgreSQL catalog permission level.
+
+                <div className="glass-card" style={{ padding: '24px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#10b981', fontWeight: 600, fontSize: '14px' }}>
+                    <CheckCircle2 size={16} /> Immutability Security Gate Verified
+                  </div>
+                  <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '8px' }}>
+                    Attempts to mutate or purge audit records will fail at the PostgreSQL catalog permission level.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="glass-panel" style={{ padding: '32px', textAlign: 'center', border: '1px solid rgba(244, 63, 94, 0.3)' }}>
+                <h2 style={{ color: '#fb7185', marginBottom: '8px' }}>Access Denied (403)</h2>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
+                  This administrative view requires individual, non-shared <code>ops</code> role provisioning per 16_security.md §6.3.
                 </p>
               </div>
-            </div>
+            )
           )}
 
-          {activeTab === 'parser' && <ParserMonitoringView />}
+          {activeTab === 'parser' && (
+            user?.role === 'ops' ? (
+              <ParserMonitoringView />
+            ) : (
+              <div className="glass-panel" style={{ padding: '32px', textAlign: 'center', border: '1px solid rgba(244, 63, 94, 0.3)' }}>
+                <h2 style={{ color: '#fb7185', marginBottom: '8px' }}>Access Denied (403)</h2>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>
+                  This administrative view requires individual, non-shared <code>ops</code> role provisioning per 16_security.md §6.3.
+                </p>
+              </div>
+            )
+          )}
         </main>
       </div>
 

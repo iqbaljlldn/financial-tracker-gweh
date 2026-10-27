@@ -162,10 +162,17 @@ func inspectImport(filePath string, line int, rawImport, callerModule, callerLay
 // Only domain interfaces may be imported by a consuming module's application or adapter layer.
 var sanctionedCrossModuleImports = map[string]map[string]bool{
 	"ingestion": {
-		"identity": true, // TokenProvider (10_backend_blueprint.md §6)
+		"identity":       true, // TokenProvider (10_backend_blueprint.md §6)
+		"administration": true, // AuditLogger (16_security.md §8)
 	},
 	"engagement": {
 		"analytics": true, // AnalyticsSnapshotReader (10_backend_blueprint.md §6)
+	},
+	"identity": {
+		"administration": true, // AuditLogger (16_security.md §8)
+	},
+	"financialcore": {
+		"administration": true, // AuditLogger (16_security.md §8)
 	},
 }
 

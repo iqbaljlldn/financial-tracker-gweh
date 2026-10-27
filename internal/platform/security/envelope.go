@@ -149,3 +149,43 @@ func (e *EnvelopeEncryptor) Decrypt(ctx context.Context, envelopeBytes []byte) (
 
 	return plaintext, nil
 }
+
+// ReWrapEnvelope re-wraps the per-record DEK inside an existing envelope payload to a new KMS key ID
+// without decrypting or touching the underlying ciphertext payload (16_security.md §4.4).
+func (e *EnvelopeEncryptor) ReWrapEnvelope(ctx context.Context, newKeyID string, envelopeBytes []byte) ([]byte, error) {
+	if len(envelopeBytes) < 1+2+1+GCMNonceSize+16 {
+		return nil, ErrEnvelopeMalformed
+	}
+
+	version := envelopeBytes[0]
+	if version != EnvelopeVersion1 {
+		return nil, fmt.Errorf("%w: got 0x%x", ErrUnsupportedVersion, version)
+	}
+
+	wrappedLen := int(binary.BigEndian.Uint16(envelopeBytes[1:3]))
+	if len(envelopeBytes) < 3+wrappedLen+GCMNonceSize+16 {
+		return nil, ErrEnvelopeMalformed
+	}
+
+	wrappedDEK := envelopeBytes[3 : 3+wrappedLen]
+	remainder := envelopeBytes[3+wrappedLen:] // nonce + ciphertext
+
+	// Re-wrap DEK via KMS
+	newWrappedDEK, err := e.kmsClient.ReWrap(ctx, e.keyID, newKeyID, wrappedDEK)
+	if err != nil {
+		return nil, fmt.Errorf("envelope: kms re-wrap failed: %w", err)
+	}
+
+	newWrappedLen := len(newWrappedDEK)
+	if newWrappedLen > 65535 {
+		return nil, errors.New("envelope: re-wrapped DEK exceeds maximum length")
+	}
+
+	newPayload := make([]byte, 1+2+newWrappedLen+len(remainder))
+	newPayload[0] = EnvelopeVersion1
+	binary.BigEndian.PutUint16(newPayload[1:3], uint16(newWrappedLen))
+	copy(newPayload[3:3+newWrappedLen], newWrappedDEK)
+	copy(newPayload[3+newWrappedLen:], remainder)
+
+	return newPayload, nil
+}

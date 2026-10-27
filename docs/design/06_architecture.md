@@ -323,6 +323,7 @@ This is elaborated fully in `17_observability.md`; this section establishes only
 | Gmail API rate-limited (429) | Ingestion backs off per-account; other accounts' processing unaffected (per-account isolation in queue task keys). |
 | PostgreSQL primary unavailable | Full write-path outage (acceptable — this is the system of record); read replica can serve Analytics read-traffic in a degraded read-only mode if configured (detail in `19_deployment.md`). |
 | Redis unavailable | Asynq cannot enqueue/dequeue — this pauses all asynchronous processing; already-committed Outbox rows remain durable in Postgres and drain once Redis recovers (Outbox durability is exactly why the pattern is anchored in Postgres, not Redis, per Section 6.1). |
+| KMS Provider unavailable | Token refresh operations fail (Critical page per `16_security.md` §4.3, §19); new Gmail API calls requiring refreshed tokens are blocked and back off; already-valid non-expired access tokens continue working until expiry; token refresh capability automatically recovers upon KMS restoration (closes R-V6 from `22_risk_analysis.md`). |
 
 This table is the architectural basis for the runbooks in `19_deployment.md` and the SLO definitions in `17_observability.md`.
 

@@ -18,6 +18,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/iqbaljlldn/financial-tracker-gweh/internal/administration"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/analytics"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/budget"
 	"github.com/iqbaljlldn/financial-tracker-gweh/internal/engagement"
@@ -237,8 +238,25 @@ func runAPI(ctx context.Context, logger *slog.Logger) {
 
 	jwtSecret, csrfSecret := initSecrets(cfg)
 
+	sessionManager, err := security.NewSessionTokenManager(jwtSecret)
+	if err != nil {
+		logger.Error("failed to initialize session manager", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
+	administrationMod, err := administration.NewModule(administration.Config{
+		DB:             dbPool,
+		SessionManager: sessionManager,
+		Logger:         logger,
+	})
+	if err != nil {
+		logger.Error("failed to initialize administration module", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
 	identityMod, err := identity.NewModule(identity.Config{
 		DB:                 dbPool,
+		AuditLogger:        administrationMod.AuditLogger,
 		KMSClient:          kmsClient,
 		KMSKeyID:           kmsKeyID,
 		JWTSecret:          jwtSecret,
@@ -249,12 +267,6 @@ func runAPI(ctx context.Context, logger *slog.Logger) {
 	})
 	if err != nil {
 		logger.Error("failed to initialize identity module", slog.String("error", err.Error()))
-		os.Exit(1)
-	}
-
-	sessionManager, err := security.NewSessionTokenManager(jwtSecret)
-	if err != nil {
-		logger.Error("failed to initialize session manager", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
 
@@ -312,11 +324,13 @@ func runAPI(ctx context.Context, logger *slog.Logger) {
 	}
 	financialcoreMod, err := financialcore.NewModule(financialcore.Config{
 		DB:                  dbPool,
+		AsynqClient:         asynqClient,
 		SessionManager:      sessionManager,
 		ConfidenceThreshold: cfg.FinancialCore.ConfidenceGateThreshold,
 		PendingReviewSLA:    cfg.FinancialCore.PendingReviewSLA,
 		CategorySuggester:   &categorySuggesterBridge{engine: understandingMod.Categorizer},
 		CategoryFeedback:    &categoryFeedbackBridge{engine: understandingMod.Categorizer},
+		AuditLogger:         administrationMod.AuditLogger,
 		Logger:              logger,
 	})
 	if err != nil {
@@ -370,7 +384,7 @@ func runAPI(ctx context.Context, logger *slog.Logger) {
 		os.Exit(1)
 	}
 
-	// Mount Identity, Ingestion, Understanding, FinancialCore, Budget, Analytics, and Engagement routes
+	// Mount Identity, Ingestion, Understanding, FinancialCore, Budget, Analytics, Engagement, and Administration routes
 	identityMod.RegisterHTTPRoutes(server.Router())
 	ingestionMod.RegisterHTTPRoutes(server.Router())
 	understandingMod.RegisterHTTPRoutes(server.Router())
@@ -378,6 +392,7 @@ func runAPI(ctx context.Context, logger *slog.Logger) {
 	budgetMod.RegisterHTTPRoutes(server.Router())
 	analyticsMod.RegisterHTTPRoutes(server.Router())
 	engagementMod.RegisterHTTPRoutes(server.Router())
+	administrationMod.RegisterHTTPRoutes(server.Router())
 
 	serverErr := make(chan error, 1)
 	go func() {
@@ -414,8 +429,25 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 
 	jwtSecret, csrfSecret := initSecrets(cfg)
 
+	sessionManager, err := security.NewSessionTokenManager(jwtSecret)
+	if err != nil {
+		logger.Error("failed to initialize session manager", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
+	administrationMod, err := administration.NewModule(administration.Config{
+		DB:             dbPool,
+		SessionManager: sessionManager,
+		Logger:         logger,
+	})
+	if err != nil {
+		logger.Error("failed to initialize administration module in worker", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
 	identityMod, err := identity.NewModule(identity.Config{
 		DB:                 dbPool,
+		AuditLogger:        administrationMod.AuditLogger,
 		KMSClient:          kmsClient,
 		KMSKeyID:           kmsKeyID,
 		JWTSecret:          jwtSecret,
@@ -426,12 +458,6 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 	})
 	if err != nil {
 		logger.Error("failed to initialize identity module", slog.String("error", err.Error()))
-		os.Exit(1)
-	}
-
-	sessionManager, err := security.NewSessionTokenManager(jwtSecret)
-	if err != nil {
-		logger.Error("failed to initialize session manager", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
 
@@ -484,6 +510,7 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 		PendingReviewSLA:    cfg.FinancialCore.PendingReviewSLA,
 		CategorySuggester:   &categorySuggesterBridge{engine: understandingMod.Categorizer},
 		CategoryFeedback:    &categoryFeedbackBridge{engine: understandingMod.Categorizer},
+		AuditLogger:         administrationMod.AuditLogger,
 		Logger:              logger,
 	})
 	if err != nil {

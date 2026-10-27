@@ -126,6 +126,32 @@ func (p *AsynqEventPublisher) Publish(ctx context.Context, event outboxrelay.Eve
 		}
 		return nil
 
+	case domain.EventUserDataPurgeRequested:
+		var payload domain.UserDataPurgeRequestedPayload
+		if err := json.Unmarshal(event.Payload, &payload); err != nil {
+			return fmt.Errorf("unmarshal UserDataPurgeRequested: %w", err)
+		}
+
+		// Enqueue ArchiveFinancialEvents task to financialcore per 07_sequence_diagrams.md Diagram 8
+		taskPayload, _ := json.Marshal(map[string]any{
+			"connectorAccountId": payload.GmailAccountID,
+			"userId":             payload.UserID,
+			"reason":             "gdpr_purge_cascade",
+		})
+
+		task := asynq.NewTask(taskserver.TaskArchiveFinancialEvents, taskPayload)
+		_, err := p.client.EnqueueContext(ctx, task, asynq.Queue(taskserver.QueueFinancialCoreFinalize), asynq.MaxRetry(5))
+		if err != nil {
+			return fmt.Errorf("enqueue ArchiveFinancialEvents: %w", err)
+		}
+
+		p.logger.Info("enqueued ArchiveFinancialEvents from purge outbox event (Diagram 8)",
+			"account_id", payload.GmailAccountID,
+			"user_id", payload.UserID,
+			"queue", taskserver.QueueFinancialCoreFinalize,
+		)
+		return nil
+
 	default:
 		// For other events (e.g. SyncCompleted), enqueue or audit log
 		p.logger.Debug("published domain event", "event_type", event.EventType, "aggregate_id", event.AggregateID)

@@ -26,6 +26,8 @@ type EventRepository interface {
 	ArchiveByIDs(ctx context.Context, userID string, ids []string, now time.Time) ([]string, error)
 	// ArchiveByConnectorAccount archives all of the user's non-archived events from one connector account.
 	ArchiveByConnectorAccount(ctx context.Context, userID, connectorAccountID string, now time.Time) ([]string, error)
+	// PermanentlyEraseArchivedEvents deletes archived financial events older than retention window (07_sequence_diagrams.md Diagram 8).
+	PermanentlyEraseArchivedEvents(ctx context.Context, olderThan time.Time) (int64, error)
 }
 
 // OutboxRepository writes outbox rows in the caller's transaction. Implementations must embed the

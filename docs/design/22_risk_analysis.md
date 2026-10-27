@@ -66,7 +66,7 @@ Each risk is scored on two axes, each 1 (Low) to 3 (High), multiplied for a comp
 | R-V3 | LLM provider outage or pricing/availability change | 2 | 2 | 4 | Medium | Provider-agnostic client abstraction (OpenAI-compatible shape) (`11_ai_blueprint.md` §8) | Designed; a provider swap is a config change, not a code change |
 | R-V4 | WhatsApp template rejection or approval-lead-time blocking a feature launch (H7) | 2 | 2 | 4 | Medium | Explicit lead-time dependency documented in feature-planning process (`15_notification_system.md` §4.3) | Requires feature-planning discipline, not purely an engineering fix |
 | R-V5 | Gmail `historyId` retention window behaving differently than assumed | 1 | 2 | 2 | Low | Bounded fallback re-sync, not a hardcoded assumption (`12_gmail_connector.md` §6.2) | Designed; monitored via `HistorySyncFallbackTriggered` frequency |
-| R-V6 | KMS provider outage blocking token refresh platform-wide | 2 | 3 | 6 | High | Identified as a gap in the original failure-domain table; explicitly flagged for correction (`16_security.md` §4.3, §19, `19_deployment.md` §8) | **Open — must be closed before launch sign-off** |
+| R-V6 | KMS provider outage blocking token refresh platform-wide | 2 | 3 | 6 | High | Added to failure-domain table (`06_architecture.md` §12) and KMS-outage runbook (`19_deployment.md` §8); monitored via `kms_operation_failure_total` alert | **Closed / Mitigated** (Sprint 10) |
 
 ---
 
@@ -115,7 +115,7 @@ Each risk is scored on two axes, each 1 (Low) to 3 (High), multiplied for a comp
 | **Medium** | R-T3, R-T4, R-T5, R-T6, R-T7, R-V3, R-V4, R-P2, R-P3, R-P4, R-O1, R-O3, R-O5 |
 | **Low** | R-V5, R-C4 |
 
-**Single open item requiring action before launch sign-off:** R-V6 (KMS failure-domain gap) is the only risk in this register whose mitigation is marked **Open** rather than "Designed" — every other row has a specified, documented mitigation already designed into the system; R-V6 is explicitly flagged across three prior documents (`16_security.md`, `19_deployment.md`) as needing to actually be added to the failure-domain table and the KMS-outage runbook, and this register makes that the one unambiguous, must-close-before-launch action item.
+**Prior open item resolved:** R-V6 (KMS failure-domain gap) was previously the only risk marked Open; it has now been closed by explicitly adding KMS failure to `06_architecture.md` §12, `19_deployment.md` §8 runbook, and registering `kms_operation_failure_total` critical alerting (`17_observability.md` §8) in Sprint 10. Zero open items remain from this register requiring design-time resolution before launch.
 
 ---
 

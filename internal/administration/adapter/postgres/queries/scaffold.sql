@@ -1,4 +1,1 @@
--- name: ListAuditLogScaffold :many
-SELECT * FROM administration.audit_log
-ORDER BY occurred_at DESC
-LIMIT $1;
+-- Scaffold queries migrated to audit_log.sql
