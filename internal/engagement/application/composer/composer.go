@@ -310,6 +310,79 @@ func (s *Service) ComposeReviewRequestNotification(ctx context.Context, payload 
 	)
 }
 
+// TransactionFinalizedPayload carries event data from FinancialEventFinalized.
+type TransactionFinalizedPayload struct {
+	UserID           uuid.UUID `json:"userId"`
+	FinancialEventID uuid.UUID `json:"financialEventId"`
+	EventType        string    `json:"eventType"`
+	AmountValue      float64   `json:"amountValue"`
+	AmountCurrency   string    `json:"amountCurrency"`
+	MerchantName     string    `json:"merchantName"`
+	Category         string    `json:"category"`
+	OccurredAt       time.Time `json:"occurredAt"`
+	FinalizedVia     string    `json:"finalizedVia"`
+}
+
+// ComposeTransactionFinalizedNotification handles FinancialEventFinalized event.
+func (s *Service) ComposeTransactionFinalizedNotification(ctx context.Context, payload TransactionFinalizedPayload) (*domain.NotificationJob, error) {
+	pref, err := s.prefRepo.GetByUserID(ctx, payload.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("composer: checking preferences: %w", err)
+	}
+	if pref == nil || !pref.IsEnabled(domain.NotificationTypeTransactionFinalized) || pref.PhoneNumber == "" {
+		s.logger.InfoContext(ctx, "transaction finalized notification skipped: no phone number registered", "userId", payload.UserID)
+		return nil, nil
+	}
+
+	currency := payload.AmountCurrency
+	if currency == "" {
+		currency = "IDR"
+	}
+
+	merchant := payload.MerchantName
+	if merchant == "" {
+		merchant = "Tidak diketahui"
+	}
+
+	category := payload.Category
+	if category == "" {
+		category = "Lain-lain"
+	}
+
+	eventTypeName := payload.EventType
+	switch strings.ToLower(eventTypeName) {
+	case "expense":
+		eventTypeName = "Pengeluaran"
+	case "income":
+		eventTypeName = "Pemasukan"
+	case "transfer":
+		eventTypeName = "Transfer"
+	}
+
+	occurredAtStr := "-"
+	if !payload.OccurredAt.IsZero() {
+		loc := time.FixedZone("WIB", 7*3600)
+		occurredAtStr = payload.OccurredAt.In(loc).Format("02 Jan 2006, 15:04 WIB")
+	}
+
+	params := map[string]string{
+		"eventType":  eventTypeName,
+		"amount":     formatCurrency(payload.AmountValue, currency),
+		"merchant":   merchant,
+		"category":   category,
+		"occurredAt": occurredAtStr,
+	}
+
+	return s.renderAndPersist(
+		ctx,
+		payload.UserID,
+		pref.PhoneNumber,
+		domain.NotificationTypeTransactionFinalized,
+		params,
+		payload.FinancialEventID.String(),
+	)
+}
+
 func (s *Service) renderAndPersist(
 	ctx context.Context,
 	userID uuid.UUID,

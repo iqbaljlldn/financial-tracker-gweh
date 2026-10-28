@@ -512,3 +512,115 @@ func TestSprint9_AgnosticClientFactory(t *testing.T) {
 		t.Errorf("expected provider 'mock', got %q", c3.ProviderName())
 	}
 }
+
+// TestSprint9_TransactionFinalizedNotification verifies:
+// 1. Finalized transactions compose transaction_finalized notification.
+// 2. Rendered template includes formatted currency, merchant, category, and date.
+// 3. Notification is delivered via messaging client.
+// 4. Opted-out / missing phone number results in clean no-op.
+func TestSprint9_TransactionFinalizedNotification(t *testing.T) {
+	pool, cleaner := setupTestDB(t)
+
+	userID := uuid.New()
+	cleaner.TrackUser(userID.String())
+
+	mockClient := mock.New()
+	engMod, err := engagement.NewModule(engagement.Config{
+		DB:              pool,
+		Analytics:       &mockAnalyticsReader{},
+		MessagingClient: mockClient,
+	})
+	if err != nil {
+		t.Fatalf("failed to initialize engagement: %v", err)
+	}
+
+	ctx := context.Background()
+
+	// 1. Without phone number: clean no-op
+	eventID := uuid.New()
+	job, err := engMod.Composer.ComposeTransactionFinalizedNotification(ctx, composer.TransactionFinalizedPayload{
+		UserID:           userID,
+		FinancialEventID: eventID,
+		EventType:        "Expense",
+		AmountValue:      150000,
+		AmountCurrency:   "IDR",
+		MerchantName:     "Starbucks",
+		Category:         "Makanan & Minuman",
+		OccurredAt:       time.Date(2026, 10, 28, 14, 30, 0, 0, time.UTC),
+		FinalizedVia:     "confidence_gate",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error composing without phone: %v", err)
+	}
+	if job != nil {
+		t.Fatalf("expected nil job when no phone number, got %v", job)
+	}
+
+	// 2. Set phone number
+	phone := "628999888777"
+	_, err = engMod.UpdatePreferencesCmd.Handle(ctx, command.UpdatePreferencesCommand{
+		UserID:      userID,
+		PhoneNumber: &phone,
+	})
+	if err != nil {
+		t.Fatalf("failed to update preferences: %v", err)
+	}
+
+	// 3. Compose with registered phone number
+	job, err = engMod.Composer.ComposeTransactionFinalizedNotification(ctx, composer.TransactionFinalizedPayload{
+		UserID:           userID,
+		FinancialEventID: eventID,
+		EventType:        "Expense",
+		AmountValue:      150000,
+		AmountCurrency:   "IDR",
+		MerchantName:     "Starbucks",
+		Category:         "Makanan & Minuman",
+		OccurredAt:       time.Date(2026, 10, 28, 14, 30, 0, 0, time.UTC),
+		FinalizedVia:     "confidence_gate",
+	})
+	if err != nil {
+		t.Fatalf("failed to compose transaction finalized notification: %v", err)
+	}
+	if job == nil {
+		t.Fatal("expected non-nil job")
+	}
+
+	if job.NotificationType() != domain.NotificationTypeTransactionFinalized {
+		t.Fatalf("expected type %s, got %s", domain.NotificationTypeTransactionFinalized, job.NotificationType())
+	}
+
+	// Inspect composed payload
+	var msg domain.OutboundMessage
+	if err := json.Unmarshal(job.ComposedPayload(), &msg); err != nil {
+		t.Fatalf("failed to unmarshal composed payload: %v", err)
+	}
+
+	if msg.Parameters["merchant"] != "Starbucks" {
+		t.Errorf("expected merchant Starbucks, got %s", msg.Parameters["merchant"])
+	}
+	if msg.Parameters["amount"] != "Rp 150.000" {
+		t.Errorf("expected amount Rp 150.000, got %s", msg.Parameters["amount"])
+	}
+	if msg.Parameters["category"] != "Makanan & Minuman" {
+		t.Errorf("expected category Makanan & Minuman, got %s", msg.Parameters["category"])
+	}
+	if msg.Parameters["eventType"] != "Pengeluaran" {
+		t.Errorf("expected eventType Pengeluaran, got %s", msg.Parameters["eventType"])
+	}
+
+	// 4. Deliver notification
+	err = engMod.DeliverCmd.Handle(ctx, command.DeliverNotificationCommand{
+		JobID: job.ID().String(),
+	})
+	if err != nil {
+		t.Fatalf("failed to deliver notification: %v", err)
+	}
+
+	delivered := mockClient.SentMessages()
+	if len(delivered) != 1 {
+		t.Fatalf("expected 1 delivered message, got %d", len(delivered))
+	}
+	if delivered[0].RecipientPhone != phone {
+		t.Errorf("expected recipient %s, got %s", phone, delivered[0].RecipientPhone)
+	}
+}

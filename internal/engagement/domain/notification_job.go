@@ -10,12 +10,13 @@ import (
 type NotificationType string
 
 const (
-	NotificationTypeDailySummary     NotificationType = "daily_summary"
-	NotificationTypeWeeklySummary    NotificationType = "weekly_summary"
-	NotificationTypeMonthlyReport    NotificationType = "monthly_report"
-	NotificationTypeBudgetAlert      NotificationType = "budget_alert"
-	NotificationTypeAiRecommendation NotificationType = "ai_recommendation"
-	NotificationTypeReviewRequest    NotificationType = "review_request"
+	NotificationTypeDailySummary         NotificationType = "daily_summary"
+	NotificationTypeWeeklySummary        NotificationType = "weekly_summary"
+	NotificationTypeMonthlyReport        NotificationType = "monthly_report"
+	NotificationTypeBudgetAlert          NotificationType = "budget_alert"
+	NotificationTypeAiRecommendation     NotificationType = "ai_recommendation"
+	NotificationTypeReviewRequest        NotificationType = "review_request"
+	NotificationTypeTransactionFinalized NotificationType = "transaction_finalized"
 )
 
 func (t NotificationType) IsValid() bool {
@@ -25,7 +26,8 @@ func (t NotificationType) IsValid() bool {
 		NotificationTypeMonthlyReport,
 		NotificationTypeBudgetAlert,
 		NotificationTypeAiRecommendation,
-		NotificationTypeReviewRequest:
+		NotificationTypeReviewRequest,
+		NotificationTypeTransactionFinalized:
 		return true
 	default:
 		return false

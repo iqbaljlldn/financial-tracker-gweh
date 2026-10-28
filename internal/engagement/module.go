@@ -133,19 +133,22 @@ func (m *Module) RegisterWorkerTasks(mux *asynq.ServeMux) {
 
 func (m *Module) handleComposeTask(ctx context.Context, task *asynq.Task) error {
 	var payload struct {
-		Type              string  `json:"type"` // "daily_summary", "weekly_summary", "monthly_report", "budget_alert", "review_request"
-		UserID            string  `json:"userId"`
-		BudgetID          string  `json:"budgetId,omitempty"`
-		Category          string  `json:"category,omitempty"`
-		Threshold         float64 `json:"threshold,omitempty"`
-		ThresholdAmount   float64 `json:"thresholdAmount,omitempty"`
-		CurrentSpend      float64 `json:"currentSpend,omitempty"`
-		Currency          string  `json:"currency,omitempty"`
-		FinancialEventID  string  `json:"financialEventId,omitempty"`
-		AmountValue       float64 `json:"amountValue,omitempty"`
-		AmountCurrency    string  `json:"amountCurrency,omitempty"`
-		MerchantName      string  `json:"merchantName,omitempty"`
-		SuggestedCategory string  `json:"suggestedCategory,omitempty"`
+		Type              string    `json:"type"` // "daily_summary", "weekly_summary", "monthly_report", "budget_alert", "review_request", "transaction_finalized"
+		UserID            string    `json:"userId"`
+		BudgetID          string    `json:"budgetId,omitempty"`
+		Category          string    `json:"category,omitempty"`
+		Threshold         float64   `json:"threshold,omitempty"`
+		ThresholdAmount   float64   `json:"thresholdAmount,omitempty"`
+		CurrentSpend      float64   `json:"currentSpend,omitempty"`
+		Currency          string    `json:"currency,omitempty"`
+		FinancialEventID  string    `json:"financialEventId,omitempty"`
+		AmountValue       float64   `json:"amountValue,omitempty"`
+		AmountCurrency    string    `json:"amountCurrency,omitempty"`
+		MerchantName      string    `json:"merchantName,omitempty"`
+		SuggestedCategory string    `json:"suggestedCategory,omitempty"`
+		EventType         string    `json:"eventType,omitempty"`
+		OccurredAt        time.Time `json:"occurredAt,omitempty"`
+		FinalizedVia      string    `json:"finalizedVia,omitempty"`
 	}
 
 	if err := json.Unmarshal(task.Payload(), &payload); err != nil {
@@ -185,6 +188,23 @@ func (m *Module) handleComposeTask(ctx context.Context, task *asynq.Task) error 
 			AmountCurrency:    payload.AmountCurrency,
 			MerchantName:      payload.MerchantName,
 			SuggestedCategory: payload.SuggestedCategory,
+		})
+	case string(domain.NotificationTypeTransactionFinalized):
+		feID, _ := uuid.Parse(payload.FinancialEventID)
+		cat := payload.Category
+		if cat == "" {
+			cat = payload.SuggestedCategory
+		}
+		_, err = m.Composer.ComposeTransactionFinalizedNotification(ctx, composer.TransactionFinalizedPayload{
+			UserID:           userUUID,
+			FinancialEventID: feID,
+			EventType:        payload.EventType,
+			AmountValue:      payload.AmountValue,
+			AmountCurrency:   payload.AmountCurrency,
+			MerchantName:     payload.MerchantName,
+			Category:         cat,
+			OccurredAt:       payload.OccurredAt,
+			FinalizedVia:     payload.FinalizedVia,
 		})
 	default:
 		m.logger.WarnContext(ctx, "unrecognized notification compose type", "type", payload.Type)

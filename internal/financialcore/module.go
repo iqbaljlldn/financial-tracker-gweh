@@ -273,6 +273,32 @@ func (m *Module) pollOutbox(ctx context.Context) {
 			}
 		}
 
+		// Relay to Engagement transaction finalized notification
+		if row.EventType == domain.EventFinancialEventFinalized && m.asynqClient != nil {
+			var p domain.FinancialEventFinalizedPayload
+			if err := json.Unmarshal(row.Payload, &p); err == nil {
+				// Avoid duplicate notifications if user confirmed via WhatsApp reply
+				// (inbound reply handler already replied with confirmation text)
+				if p.FinalizedVia != domain.FinalizedViaConfirmation {
+					amtVal, _ := strconv.ParseFloat(p.Amount.Value(), 64)
+					composePayload, _ := json.Marshal(map[string]any{
+						"type":             "transaction_finalized",
+						"userId":           p.UserID,
+						"financialEventId": p.EventID,
+						"eventType":        p.EventType,
+						"amountValue":      amtVal,
+						"amountCurrency":   p.Amount.Currency(),
+						"merchantName":     p.Merchant,
+						"category":         p.Category,
+						"occurredAt":       p.OccurredAt,
+						"finalizedVia":     p.FinalizedVia,
+					})
+					task := asynq.NewTask(taskserver.TaskComposeNotification, composePayload)
+					_, _ = m.asynqClient.Enqueue(task, asynq.Queue(taskserver.QueueEngagementCompose))
+				}
+			}
+		}
+
 		ids = append(ids, row.ID)
 	}
 

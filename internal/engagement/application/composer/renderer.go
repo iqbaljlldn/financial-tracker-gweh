@@ -84,6 +84,21 @@ Sistem mendeteksi transaksi yang membutuhkan konfirmasi Anda:
 			{ID: "edit", Label: "Edit"},
 		},
 	},
+	domain.NotificationTypeTransactionFinalized: {
+		TemplateID: "transaction_finalized_v1",
+		Body: strings.TrimSpace(`
+💳 *Transaksi Berhasil Dicatat*
+Transaksi baru Anda telah berhasil dicatat ke pembukuan:
+
+• Jenis: *{{.eventType}}*
+• Nominal: *{{.amount}}*
+• Merchant: *{{.merchant}}*
+• Kategori: *{{.category}}*
+• Waktu: *{{.occurredAt}}*
+
+_Catatan keuangan Anda telah otomatis diperbarui di Financial Tracker._
+`),
+	},
 }
 
 // TemplateRenderer renders notification messages with formatted parameters.

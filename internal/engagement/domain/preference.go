@@ -45,9 +45,9 @@ func (p *NotificationPreferences) IsEnabled(t NotificationType) bool {
 		return p.BudgetAlertsEnabled
 	case NotificationTypeAiRecommendation:
 		return p.AiRecommendationsEnabled
-	case NotificationTypeReviewRequest:
-		// Review requests are critical safety interactions for pending-review ledger items;
-		// they remain enabled as long as a phone number is registered.
+	case NotificationTypeReviewRequest, NotificationTypeTransactionFinalized:
+		// Real-time transaction notifications (review requests & finalized updates)
+		// are delivered as long as a phone number is registered.
 		return p.PhoneNumber != ""
 	default:
 		return false
