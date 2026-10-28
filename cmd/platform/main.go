@@ -316,6 +316,10 @@ func runAPI(ctx context.Context, logger *slog.Logger) {
 			DefaultModel: cfg.Understanding.Model,
 			Timeout:      cfg.Understanding.AIRequestTimeout,
 		},
+		BudgetConfig: understanding.BudgetConfig{
+			MaxPerUserDaily:  cfg.Understanding.MaxDailyQuotaPerUser,
+			MaxPlatformDaily: 5000,
+		},
 		Logger: logger,
 	})
 	if err != nil {
@@ -494,6 +498,10 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 			DefaultModel: cfg.Understanding.Model,
 			Timeout:      cfg.Understanding.AIRequestTimeout,
 		},
+		BudgetConfig: understanding.BudgetConfig{
+			MaxPerUserDaily:  cfg.Understanding.MaxDailyQuotaPerUser,
+			MaxPlatformDaily: 5000,
+		},
 		Logger: logger,
 	})
 	if err != nil {
@@ -631,12 +639,14 @@ func runWorker(ctx context.Context, logger *slog.Logger) {
 				_ = financialcoreMod.CheckSLACmd.Handle(ctx, fcCmd.CheckPendingReviewSLACommand{
 					Now: time.Now(),
 				})
-				// Trigger periodic daily summary broadcast
-				bcastPayload, _ := json.Marshal(map[string]any{
-					"notificationType": "daily_summary",
-				})
-				bcastTask := asynq.NewTask(taskserver.TaskRunScheduledBroadcast, bcastPayload)
-				_, _ = asynqClient.Enqueue(bcastTask, asynq.Queue(taskserver.QueueEngagementCompose))
+				// Trigger daily summary broadcast only once a day at 08:00 WIB (01:00 UTC)
+				if time.Now().UTC().Hour() == 1 {
+					bcastPayload, _ := json.Marshal(map[string]any{
+						"notificationType": "daily_summary",
+					})
+					bcastTask := asynq.NewTask(taskserver.TaskRunScheduledBroadcast, bcastPayload)
+					_, _ = asynqClient.Enqueue(bcastTask, asynq.Queue(taskserver.QueueEngagementCompose))
+				}
 			}
 		}
 	}()

@@ -29,8 +29,9 @@ understanding:
   model: "qwen/qwen3.8-27b" # groq: qwen/qwen3.8-27b; gemini: gemini-flash-latest
   confidence_threshold: 0.85
   ai_rate_limit_per_second: 5
-  ai_request_timeout: "10s"
+  ai_request_timeout: "30s"
   max_ai_fallbacks_per_hour: 500
+  max_daily_quota_per_user: 200
 
 financialcore:
   base_currency: "USD"

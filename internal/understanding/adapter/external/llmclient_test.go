@@ -93,9 +93,11 @@ func TestOpenAICompatibleLLMClient_RateLimit_429(t *testing.T) {
 	defer ts.Close()
 
 	client := external.NewOpenAICompatibleLLMClient(external.LLMClientConfig{
-		BaseURL:      ts.URL,
-		APIKey:       "test-key",
-		DefaultModel: "test-model",
+		BaseURL:        ts.URL,
+		APIKey:         "test-key",
+		DefaultModel:   "test-model",
+		MaxRetries:     1,
+		InitialBackoff: 10 * time.Millisecond,
 	})
 
 	_, err := client.Extract(context.Background(), domain.ExtractionPromptRequest{
@@ -107,6 +109,47 @@ func TestOpenAICompatibleLLMClient_RateLimit_429(t *testing.T) {
 	}
 	if err != domain.ErrLLMRateLimitExceeded {
 		t.Errorf("expected ErrLLMRateLimitExceeded, got %v", err)
+	}
+}
+
+func TestOpenAICompatibleLLMClient_RateLimit_RetrySuccess(t *testing.T) {
+	attempts := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts == 1 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":{"message":"Rate limit reached"}}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]string{"content": `{"status":"ok"}`}},
+			},
+		})
+	}))
+	defer ts.Close()
+
+	client := external.NewOpenAICompatibleLLMClient(external.LLMClientConfig{
+		BaseURL:        ts.URL,
+		APIKey:         "test-key",
+		DefaultModel:   "test-model",
+		MaxRetries:     2,
+		InitialBackoff: 10 * time.Millisecond,
+	})
+
+	res, err := client.Extract(context.Background(), domain.ExtractionPromptRequest{
+		Messages: []domain.LLMMessage{{Role: "user", Content: "Hello"}},
+	})
+
+	if err != nil {
+		t.Fatalf("expected retry to succeed, got %v", err)
+	}
+	if res.RawJSON != `{"status":"ok"}` {
+		t.Errorf("expected rawJSON `{\"status\":\"ok\"}`, got %s", res.RawJSON)
+	}
+	if attempts != 2 {
+		t.Errorf("expected 2 attempts, got %d", attempts)
 	}
 }
 

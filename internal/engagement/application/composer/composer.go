@@ -82,6 +82,17 @@ func (s *Service) ComposeDailySummary(ctx context.Context, userID uuid.UUID) (*d
 		return nil, nil // clean no-op
 	}
 
+	// 1b. Deduplication: Don't send more than one daily summary within 20 hours
+	recentJobs, err := s.jobRepo.ListByUserID(ctx, userID, 10, 0)
+	if err == nil {
+		for _, j := range recentJobs {
+			if j.NotificationType() == domain.NotificationTypeDailySummary && time.Since(j.CreatedAt()) < 20*time.Hour {
+				s.logger.InfoContext(ctx, "daily summary already composed recently, skipping duplicate", "userId", userID, "jobId", j.ID())
+				return nil, nil
+			}
+		}
+	}
+
 	// 2. Read exclusively from Analytics read models [GATE]
 	yesterday := time.Now().UTC().AddDate(0, 0, -1)
 	from := time.Date(yesterday.Year(), yesterday.Month(), yesterday.Day(), 0, 0, 0, 0, time.UTC)

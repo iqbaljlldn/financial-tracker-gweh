@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,28 +19,32 @@ import (
 )
 
 const (
-	defaultTimeout = 15 * time.Second
+	defaultTimeout = 30 * time.Second
 	tracerName     = "financial-tracker/understanding/llmclient"
 )
 
 // LLMClientConfig configures the OpenAI-compatible HTTP client.
 type LLMClientConfig struct {
-	BaseURL      string
-	APIKey       string
-	DefaultModel string
-	Timeout      time.Duration
-	HTTPClient   *http.Client
-	Logger       *slog.Logger
+	BaseURL        string
+	APIKey         string
+	DefaultModel   string
+	Timeout        time.Duration
+	MaxRetries     int
+	InitialBackoff time.Duration
+	HTTPClient     *http.Client
+	Logger         *slog.Logger
 }
 
 // OpenAICompatibleLLMClient implements domain.LLMExtractor targeting any OpenAI-compatible API (11_ai_blueprint.md §8).
 type OpenAICompatibleLLMClient struct {
-	baseURL      string
-	apiKey       string
-	defaultModel string
-	client       *http.Client
-	logger       *slog.Logger
-	tracer       trace.Tracer
+	baseURL        string
+	apiKey         string
+	defaultModel   string
+	maxRetries     int
+	initialBackoff time.Duration
+	client         *http.Client
+	logger         *slog.Logger
+	tracer         trace.Tracer
 }
 
 // NewOpenAICompatibleLLMClient creates a new provider-agnostic LLM client.
@@ -61,13 +66,24 @@ func NewOpenAICompatibleLLMClient(cfg LLMClientConfig) *OpenAICompatibleLLMClien
 		logger = slog.Default()
 	}
 
+	maxRetries := cfg.MaxRetries
+	if maxRetries <= 0 {
+		maxRetries = 3
+	}
+	initialBackoff := cfg.InitialBackoff
+	if initialBackoff <= 0 {
+		initialBackoff = 2 * time.Second
+	}
+
 	return &OpenAICompatibleLLMClient{
-		baseURL:      baseURL,
-		apiKey:       cfg.APIKey,
-		defaultModel: cfg.DefaultModel,
-		client:       httpClient,
-		logger:       logger,
-		tracer:       otel.Tracer(tracerName),
+		baseURL:        baseURL,
+		apiKey:         cfg.APIKey,
+		defaultModel:   cfg.DefaultModel,
+		maxRetries:     maxRetries,
+		initialBackoff: initialBackoff,
+		client:         httpClient,
+		logger:         logger,
+		tracer:         otel.Tracer(tracerName),
 	}
 }
 
@@ -145,44 +161,72 @@ func (c *OpenAICompatibleLLMClient) Extract(
 	}
 
 	endpoint := c.baseURL + "/chat/completions"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bodyBytes))
-	if err != nil {
-		span.RecordError(err)
-		return nil, fmt.Errorf("creating HTTP request: %w", err)
-	}
 
-	httpReq.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
+	var resp *http.Response
+	var respBytes []byte
+	var latencyMs int64
 
-	startTime := time.Now()
-	resp, err := c.client.Do(httpReq)
-	latency := time.Since(startTime)
-	latencyMs := latency.Milliseconds()
+	for attempt := 0; attempt <= c.maxRetries; attempt++ {
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bodyBytes))
+		if err != nil {
+			span.RecordError(err)
+			return nil, fmt.Errorf("creating HTTP request: %w", err)
+		}
 
-	span.SetAttributes(attribute.Int64("llm.latency_ms", latencyMs))
+		httpReq.Header.Set("Content-Type", "application/json")
+		if c.apiKey != "" {
+			httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+		}
 
-	if err != nil {
-		span.RecordError(err)
-		return nil, fmt.Errorf("%w: %v", domain.ErrLLMRequestFailed, err)
-	}
-	defer func() { _ = resp.Body.Close() }()
+		startTime := time.Now()
+		resp, err = c.client.Do(httpReq)
+		latency := time.Since(startTime)
+		latencyMs = latency.Milliseconds()
 
-	respBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		span.RecordError(err)
-		return nil, fmt.Errorf("reading LLM response: %w", err)
-	}
+		span.SetAttributes(attribute.Int64("llm.latency_ms", latencyMs))
 
-	span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
+		if err != nil {
+			span.RecordError(err)
+			return nil, fmt.Errorf("%w: %v", domain.ErrLLMRequestFailed, err)
+		}
 
-	if resp.StatusCode == http.StatusTooManyRequests {
-		return nil, domain.ErrLLMRateLimitExceeded
-	}
+		respBytes, err = io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if err != nil {
+			span.RecordError(err)
+			return nil, fmt.Errorf("reading LLM response: %w", err)
+		}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%w: HTTP %d: %s", domain.ErrLLMRequestFailed, resp.StatusCode, string(respBytes))
+		span.SetAttributes(attribute.Int("http.status_code", resp.StatusCode))
+
+		if resp.StatusCode == http.StatusTooManyRequests {
+			if attempt < c.maxRetries {
+				backoff := c.initialBackoff * time.Duration(1<<attempt)
+				if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
+					if sec, parseErr := strconv.Atoi(retryAfter); parseErr == nil && sec > 0 && sec <= 30 {
+						backoff = time.Duration(sec) * time.Second
+					}
+				}
+				c.logger.WarnContext(ctx, "LLM rate limit reached (429), backing off before retry",
+					"attempt", attempt+1,
+					"maxRetries", c.maxRetries,
+					"backoff", backoff,
+				)
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(backoff):
+					continue
+				}
+			}
+			return nil, domain.ErrLLMRateLimitExceeded
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("%w: HTTP %d: %s", domain.ErrLLMRequestFailed, resp.StatusCode, string(respBytes))
+		}
+
+		break
 	}
 
 	var res openAIResponse

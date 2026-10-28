@@ -19,7 +19,7 @@ type BudgetConfig struct {
 // DefaultBudgetConfig returns standard development limits.
 func DefaultBudgetConfig() BudgetConfig {
 	return BudgetConfig{
-		MaxPerUserDaily:  100,
+		MaxPerUserDaily:  200,
 		MaxPlatformDaily: 5000,
 	}
 }
@@ -36,7 +36,7 @@ type DailyBudgetGovernor struct {
 // NewDailyBudgetGovernor creates a new DailyBudgetGovernor.
 func NewDailyBudgetGovernor(cfg BudgetConfig) *DailyBudgetGovernor {
 	if cfg.MaxPerUserDaily <= 0 {
-		cfg.MaxPerUserDaily = 100
+		cfg.MaxPerUserDaily = 200
 	}
 	if cfg.MaxPlatformDaily <= 0 {
 		cfg.MaxPlatformDaily = 5000

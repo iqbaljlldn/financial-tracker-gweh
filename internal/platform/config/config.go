@@ -90,6 +90,7 @@ type UnderstandingConfig struct {
 	AIRateLimitPerSecond  int           `yaml:"ai_rate_limit_per_second"`
 	AIRequestTimeout      time.Duration `yaml:"ai_request_timeout"`
 	MaxAIFallbacksPerHour int           `yaml:"max_ai_fallbacks_per_hour"`
+	MaxDailyQuotaPerUser  int           `yaml:"max_daily_quota_per_user"`
 
 	// Resolved runtime credentials (populated from environment variables)
 	ResolvedAPIKey  string `yaml:"-"`
@@ -169,6 +170,18 @@ func applyEnvironmentOverrides(cfg *Config) {
 	applyIdentityOverrides(cfg)
 	applyEngagementOverrides(cfg)
 	applyIngestionOverrides(cfg)
+	applyUnderstandingOverrides(cfg)
+}
+
+func applyUnderstandingOverrides(cfg *Config) {
+	if val := os.Getenv("AI_DAILY_QUOTA_PER_USER"); val != "" {
+		if q, err := strconv.Atoi(val); err == nil && q > 0 {
+			cfg.Understanding.MaxDailyQuotaPerUser = q
+		}
+	}
+	if cfg.Understanding.MaxDailyQuotaPerUser <= 0 {
+		cfg.Understanding.MaxDailyQuotaPerUser = 200
+	}
 }
 
 func applyPlatformOverrides(cfg *Config) {

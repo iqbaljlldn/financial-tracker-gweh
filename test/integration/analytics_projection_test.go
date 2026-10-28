@@ -284,6 +284,9 @@ func TestSprint8_FullRebuildFromReplay(t *testing.T) {
 	})
 	proj := mod.Projector()
 	rebuilder := mod.Rebuilder()
+	t.Cleanup(func() {
+		_ = rebuilder.RebuildFromDB(context.Background(), pool)
+	})
 
 	d1 := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
 	d2 := time.Date(2026, 9, 2, 11, 0, 0, 0, time.UTC)

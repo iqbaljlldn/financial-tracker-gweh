@@ -33,6 +33,9 @@ type AIConfig struct {
 	Timeout      time.Duration
 }
 
+// BudgetConfig aliases governance.BudgetConfig for consumer configuration.
+type BudgetConfig = governance.BudgetConfig
+
 // Config provides configuration dependencies for the understanding module.
 type Config struct {
 	DB                *pgxpool.Pool
